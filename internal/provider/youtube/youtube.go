@@ -50,46 +50,34 @@ func (p *Provider) Resolve(ctx context.Context, s provider.Station) (provider.Tr
 		url = "https://www.youtube.com/watch?v=" + url
 	}
 
-	metaCmd := exec.CommandContext(ctx, p.binary,
+	cmd := exec.CommandContext(ctx, p.binary,
 		"--no-playlist",
 		"--skip-download",
+		"-f", "bestaudio/best",
 		"--print", "%(title)s",
 		"--print", "%(uploader)s",
 		"--print", "%(duration)s",
+		"--print", "%(urls)s",
 		url,
 	)
-	var metaOut, metaErr bytes.Buffer
-	metaCmd.Stdout = &metaOut
-	metaCmd.Stderr = &metaErr
-	if err := metaCmd.Run(); err != nil {
-		return provider.Track{}, fmt.Errorf("yt-dlp metadata: %w: %s", err, metaErr.String())
+	var out, errBuf bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errBuf
+	if err := cmd.Run(); err != nil {
+		return provider.Track{}, fmt.Errorf("yt-dlp: %w: %s", err, errBuf.String())
 	}
 
-	lines := strings.Split(strings.TrimRight(metaOut.String(), "\n"), "\n")
-	if len(lines) < 3 {
-		return provider.Track{}, fmt.Errorf("unexpected yt-dlp metadata output: %q", metaOut.String())
+	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
+	if len(lines) < 4 {
+		return provider.Track{}, fmt.Errorf("unexpected yt-dlp output: %q", out.String())
 	}
-	title, uploader, durStr := lines[0], lines[1], lines[2]
+	title, uploader, durStr, streamURL := lines[0], lines[1], lines[2], strings.TrimSpace(lines[3])
 
 	durSecs, err := strconv.ParseFloat(durStr, 64)
 	if err != nil {
 		durSecs = 0
 	}
 
-	urlCmd := exec.CommandContext(ctx, p.binary,
-		"--no-playlist",
-		"-f", "bestaudio/best",
-		"-g",
-		url,
-	)
-	var urlOut, urlErrBuf bytes.Buffer
-	urlCmd.Stdout = &urlOut
-	urlCmd.Stderr = &urlErrBuf
-	if err := urlCmd.Run(); err != nil {
-		return provider.Track{}, fmt.Errorf("yt-dlp stream url: %w: %s", err, urlErrBuf.String())
-	}
-
-	streamURL := strings.TrimSpace(urlOut.String())
 	if streamURL == "" {
 		return provider.Track{}, errors.New("yt-dlp returned empty stream url")
 	}
