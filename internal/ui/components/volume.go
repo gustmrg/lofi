@@ -7,9 +7,14 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-func Volume(width, vol int, label, fill, bg, value lipgloss.Style) string {
+func Volume(width, vol int, muted bool, label, fill, bg, mutedStyle, value lipgloss.Style) string {
 	labelStr := label.Render("vol")
-	valStr := value.Render(fmt.Sprintf("%3d%%", vol))
+	var valStr string
+	if muted {
+		valStr = mutedStyle.Render("mute")
+	} else {
+		valStr = value.Render(fmt.Sprintf("%3d%%", vol))
+	}
 
 	barWidth := width - lipgloss.Width(labelStr) - lipgloss.Width(valStr) - 4
 	if barWidth < 4 {
@@ -18,11 +23,16 @@ func Volume(width, vol int, label, fill, bg, value lipgloss.Style) string {
 	if barWidth > 40 {
 		barWidth = 40
 	}
-	filled := barWidth * vol / 100
+
+	displayVol := vol
+	if muted {
+		displayVol = 0
+	}
+	filled := barWidth * displayVol / 100
 	if filled > barWidth {
 		filled = barWidth
 	}
-	bar := fill.Render(strings.Repeat("=", filled)) + bg.Render(strings.Repeat("-", barWidth-filled))
 
+	bar := fill.Render(strings.Repeat("=", filled)) + bg.Render(strings.Repeat("-", barWidth-filled))
 	return labelStr + " " + bar + "  " + valStr
 }

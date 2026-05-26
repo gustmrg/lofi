@@ -30,14 +30,13 @@ func (m *Model) View() string {
 	)
 
 	np := components.NowPlaying(components.NowPlayingArgs{
-		Width:       contentWidth,
-		Label:       styleNPLabel.Render("NOW PLAYING"),
-		Title:       styleNPTitle.Render(m.track.Title),
-		AmbienceTag: ambienceTag(m.rainOn),
-		Artist:      styleNPArtist.Render("by " + m.track.Artist),
-		Visualizer:  components.Visualizer(m.visualizer[:], contentWidth-4, pal.Accent, pal.Blue, pal.Purple, pal.TextFaint),
-		Progress:    components.ProgressBar(contentWidth-4, m.elapsed, m.track.Duration, styleProgressFill, styleProgressBg, styleTime),
-		AccentBar:   styleAccentBar.Render("|"),
+		Width:      contentWidth,
+		Label:      styleNPLabel.Render("NOW PLAYING"),
+		Title:      styleNPTitle.Render(m.track.Title),
+		Artist:     styleNPArtist.Render("by " + m.track.Artist),
+		Visualizer: components.Visualizer(m.visualizer[:], contentWidth-4, pal.Accent, pal.Blue, pal.Purple, pal.TextFaint),
+		Progress:   components.ProgressBar(contentWidth-4, m.elapsed, m.track.Duration, styleProgressFill, styleProgressBg, styleTime),
+		AccentBar:  styleAccentBar.Render("|"),
 	})
 
 	controls := components.Controls(contentWidth,
@@ -49,8 +48,8 @@ func (m *Model) View() string {
 		styleStationMetaListeners, styleStationMetaBitrate,
 		pal.Accent, pal.TextFaint)
 
-	vol := components.Volume(contentWidth, m.volume,
-		styleFooterLabel, styleVolFill, styleVolBg, styleStationMetaListeners)
+	vol := components.Volume(contentWidth, m.volume, m.muted,
+		styleFooterLabel, styleVolFill, styleVolBg, styleMuted, styleStationMetaListeners)
 
 	footer := components.Footer(contentWidth, styleFooterKey, styleFooterLabel)
 
@@ -78,9 +77,3 @@ func statusText(playing bool) string {
 	return "[ - paused    ]"
 }
 
-func ambienceTag(on bool) string {
-	if !on {
-		return ""
-	}
-	return styleAmbience.Render("[ rain ]")
-}

@@ -82,12 +82,27 @@ func TestVolumeClamp(t *testing.T) {
 	}
 }
 
-func TestRainToggle(t *testing.T) {
+func TestMuteToggle(t *testing.T) {
 	m := newTestModel(t)
-	initial := m.rainOn
-	m = sendRune(t, m, 'r')
-	if m.rainOn == initial {
-		t.Fatal("r should toggle rain")
+	if m.muted {
+		t.Fatal("expected initial muted=false")
+	}
+	m = sendRune(t, m, 'm')
+	if !m.muted {
+		t.Fatal("m should mute")
+	}
+	m = sendRune(t, m, 'm')
+	if m.muted {
+		t.Fatal("m should unmute")
+	}
+}
+
+func TestVolumeKeyUnmutes(t *testing.T) {
+	m := newTestModel(t)
+	m.muted = true
+	m = sendKey(t, m, 0, tea.KeyRight)
+	if m.muted {
+		t.Fatal("volume key should unmute")
 	}
 }
 

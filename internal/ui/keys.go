@@ -9,7 +9,7 @@ type keyMap struct {
 	Shuffle   key.Binding
 	VolUp     key.Binding
 	VolDown   key.Binding
-	Rain      key.Binding
+	Mute      key.Binding
 	Quit      key.Binding
 	Stations  []key.Binding
 }
@@ -26,7 +26,7 @@ func defaultKeys() keyMap {
 		Shuffle:   key.NewBinding(key.WithKeys("s")),
 		VolUp:     key.NewBinding(key.WithKeys("right", "l")),
 		VolDown:   key.NewBinding(key.WithKeys("left", "h")),
-		Rain:      key.NewBinding(key.WithKeys("r")),
+		Mute:      key.NewBinding(key.WithKeys("m")),
 		Quit:      key.NewBinding(key.WithKeys("q", "ctrl+c", "esc")),
 		Stations:  stations,
 	}

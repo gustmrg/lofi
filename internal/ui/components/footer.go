@@ -14,9 +14,9 @@ var bindings = []keybind{
 	{"spc", "play/pause"},
 	{"up/dn", "browse stations"},
 	{"l/r", "volume"},
+	{"m", "mute"},
 	{"s", "shuffle"},
 	{"1-5", "station"},
-	{"r", "rain"},
 	{"q", "quit"},
 }
 

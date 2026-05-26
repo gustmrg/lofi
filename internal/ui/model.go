@@ -28,7 +28,7 @@ type Model struct {
 	elapsed    time.Duration
 	playing    bool
 	volume     int
-	rainOn     bool
+	muted      bool
 	visualizer [visualizerBars]int
 	width      int
 	height     int
@@ -51,7 +51,6 @@ func NewModel(p provider.Provider) (*Model, error) {
 		stations: stations,
 		volume:   72,
 		playing:  true,
-		rainOn:   true,
 		keys:     defaultKeys(),
 		rng:      rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
@@ -124,11 +123,13 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			m.loadTrack(next)
 		}
 	case key.Matches(msg, m.keys.VolUp):
+		m.muted = false
 		m.volume = clampInt(m.volume+5, 0, 100)
 	case key.Matches(msg, m.keys.VolDown):
+		m.muted = false
 		m.volume = clampInt(m.volume-5, 0, 100)
-	case key.Matches(msg, m.keys.Rain):
-		m.rainOn = !m.rainOn
+	case key.Matches(msg, m.keys.Mute):
+		m.muted = !m.muted
 	default:
 		for i, b := range m.keys.Stations {
 			if i >= len(m.stations) {

@@ -60,8 +60,6 @@ var (
 	styleNPArtist = lipgloss.NewStyle().
 			Foreground(pal.AccentDim)
 
-	styleAmbience = lipgloss.NewStyle().Foreground(pal.Blue)
-
 	styleTime = lipgloss.NewStyle().
 			Foreground(pal.TextFaint)
 
@@ -70,6 +68,7 @@ var (
 
 	styleVolFill = lipgloss.NewStyle().Foreground(pal.Green)
 	styleVolBg   = lipgloss.NewStyle().Foreground(pal.Border)
+	styleMuted   = lipgloss.NewStyle().Foreground(pal.Red).Bold(true)
 
 	styleCtrlBtn = lipgloss.NewStyle().Foreground(pal.TextDim)
 

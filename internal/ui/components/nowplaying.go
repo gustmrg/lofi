@@ -3,25 +3,19 @@ package components
 import "strings"
 
 type NowPlayingArgs struct {
-	Width       int
-	Label       string
-	Title       string
-	AmbienceTag string
-	Artist      string
-	Visualizer  string
-	Progress    string
-	AccentBar   string
+	Width      int
+	Label      string
+	Title      string
+	Artist     string
+	Visualizer string
+	Progress   string
+	AccentBar  string
 }
 
 func NowPlaying(a NowPlayingArgs) string {
-	titleLine := a.Title
-	if a.AmbienceTag != "" {
-		titleLine = a.Title + "  " + a.AmbienceTag
-	}
-
 	rows := []string{
 		a.Label,
-		titleLine,
+		a.Title,
 		a.Artist,
 		"",
 		a.Visualizer,
