@@ -71,6 +71,16 @@ var (
 	styleMuted   = lipgloss.NewStyle().Foreground(pal.Red).Bold(true)
 	styleError   = lipgloss.NewStyle().Foreground(pal.Red)
 
+	styleModalBox = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(pal.Accent).
+			Padding(1, 3).
+			Width(64)
+
+	styleModalTitle  = lipgloss.NewStyle().Foreground(pal.Accent).Bold(true)
+	styleModalHint   = lipgloss.NewStyle().Foreground(pal.TextFaint)
+	styleModalStatus = lipgloss.NewStyle().Foreground(pal.TextDim)
+
 	styleCtrlBtn = lipgloss.NewStyle().Foreground(pal.TextDim)
 
 	styleCtrlBtnPrimary = lipgloss.NewStyle().Foreground(pal.Accent).Bold(true)

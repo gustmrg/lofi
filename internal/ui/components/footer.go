@@ -17,6 +17,8 @@ var bindings = []keybind{
 	{"m", "mute"},
 	{"s", "shuffle"},
 	{"1-5", "station"},
+	{"a", "add"},
+	{"d", "delete"},
 	{"q", "quit"},
 }
 

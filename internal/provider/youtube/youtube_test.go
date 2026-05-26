@@ -11,6 +11,7 @@ func TestNew_RequiresYtDlp(t *testing.T) {
 	if _, err := exec.LookPath("yt-dlp"); err != nil {
 		t.Skip("yt-dlp not installed; skipping")
 	}
+	t.Setenv("HOME", t.TempDir())
 	p, err := New()
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -34,6 +35,7 @@ func TestResolve_LiveStream(t *testing.T) {
 	if _, err := exec.LookPath("yt-dlp"); err != nil {
 		t.Skip("yt-dlp not installed; skipping")
 	}
+	t.Setenv("HOME", t.TempDir())
 
 	p, err := New()
 	if err != nil {

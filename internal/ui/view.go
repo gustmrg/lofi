@@ -23,6 +23,22 @@ func (m *Model) View() string {
 		contentWidth = minWidth
 	}
 
+	if m.mode == modeAddStation {
+		return components.AddStationModal(components.AddStationModalArgs{
+			Width:       width,
+			Height:      m.height,
+			Title:       "ADD STATION",
+			Input:       m.input.View(),
+			Loading:     m.adding,
+			Error:       m.addError,
+			BoxStyle:    styleModalBox,
+			TitleStyle:  styleModalTitle,
+			HintStyle:   styleModalHint,
+			StatusStyle: styleModalStatus,
+			ErrorStyle:  styleError,
+		})
+	}
+
 	header := components.Header(contentWidth,
 		styleLogo.Render("lofi"),
 		styleLogoSub.Render("terminal beats player"),

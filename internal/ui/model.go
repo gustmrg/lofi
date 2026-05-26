@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/gustmrg/lofi/internal/player"
@@ -18,6 +19,13 @@ const (
 	visualizerBars = 48
 	tickInterval   = 80 * time.Millisecond
 	resolveTimeout = 15 * time.Second
+)
+
+type uiMode int
+
+const (
+	modeNormal uiMode = iota
+	modeAddStation
 )
 
 type tickMsg time.Time
@@ -36,8 +44,25 @@ type playerErrorMsg struct {
 	err error
 }
 
+type stationAddedMsg struct {
+	station provider.Station
+}
+
+type stationRemovedMsg struct {
+	removedIdx int
+}
+
+type addErrorMsg struct {
+	err error
+}
+
+type removeErrorMsg struct {
+	err error
+}
+
 type Model struct {
 	prov       provider.Provider
+	manager    provider.StationManager
 	player     player.Player
 	stations   []provider.Station
 	activeIdx  int
@@ -54,6 +79,11 @@ type Model struct {
 	keys       keyMap
 	rng        *rand.Rand
 	lastTick   time.Time
+
+	mode     uiMode
+	input    textinput.Model
+	adding   bool
+	addError string
 }
 
 func NewModel(p provider.Provider, pl player.Player) (*Model, error) {
@@ -65,8 +95,16 @@ func NewModel(p provider.Provider, pl player.Player) (*Model, error) {
 		return nil, fmt.Errorf("provider returned no stations")
 	}
 
+	mgr, _ := p.(provider.StationManager)
+
+	ti := textinput.New()
+	ti.Placeholder = "https://youtube.com/watch?v=..."
+	ti.CharLimit = 256
+	ti.Width = 56
+
 	m := &Model{
 		prov:     p,
+		manager:  mgr,
 		player:   pl,
 		stations: stations,
 		volume:   72,
@@ -75,6 +113,7 @@ func NewModel(p provider.Provider, pl player.Player) (*Model, error) {
 		keys:     defaultKeys(),
 		rng:      rand.New(rand.NewSource(time.Now().UnixNano())),
 		track:    provider.Track{Title: stations[0].Name, Artist: "loading…"},
+		input:    ti,
 	}
 	return m, nil
 }
@@ -115,6 +154,29 @@ func resolveCmd(p provider.Provider, idx int, s provider.Station) tea.Cmd {
 			return trackErrorMsg{idx: idx, err: err}
 		}
 		return trackResolvedMsg{idx: idx, track: t}
+	}
+}
+
+func addStationCmd(sm provider.StationManager, url string) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), resolveTimeout)
+		defer cancel()
+		s, err := sm.AddByURL(ctx, url)
+		if err != nil {
+			return addErrorMsg{err: err}
+		}
+		return stationAddedMsg{station: s}
+	}
+}
+
+func removeStationCmd(sm provider.StationManager, id string, idx int) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := sm.Remove(ctx, id); err != nil {
+			return removeErrorMsg{err: err}
+		}
+		return stationRemovedMsg{removedIdx: idx}
 	}
 }
 
@@ -198,10 +260,77 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case stationAddedMsg:
+		m.adding = false
+		m.addError = ""
+		m.mode = modeNormal
+		m.input.Reset()
+		m.input.Blur()
+		stations, err := m.prov.Stations(context.Background())
+		if err == nil {
+			m.stations = stations
+		} else {
+			m.stations = append(m.stations, msg.station)
+		}
+		return m, m.loadTrack(len(m.stations) - 1)
+
+	case addErrorMsg:
+		m.adding = false
+		m.addError = msg.err.Error()
+		return m, nil
+
+	case stationRemovedMsg:
+		stations, err := m.prov.Stations(context.Background())
+		if err == nil {
+			m.stations = stations
+		}
+		if len(m.stations) == 0 {
+			return m, nil
+		}
+		newIdx := msg.removedIdx
+		if newIdx >= len(m.stations) {
+			newIdx = len(m.stations) - 1
+		}
+		return m, m.loadTrack(newIdx)
+
+	case removeErrorMsg:
+		m.lastError = msg.err.Error()
+		return m, nil
+
 	case tea.KeyMsg:
+		if m.mode == modeAddStation {
+			return m.handleAddKey(msg)
+		}
 		return m.handleKey(msg)
 	}
 	return m, nil
+}
+
+func (m *Model) handleAddKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Cancel):
+		m.mode = modeNormal
+		m.adding = false
+		m.addError = ""
+		m.input.Reset()
+		m.input.Blur()
+		return m, nil
+	case key.Matches(msg, m.keys.Confirm):
+		if m.adding {
+			return m, nil
+		}
+		url := m.input.Value()
+		if url == "" {
+			m.addError = "url is empty"
+			return m, nil
+		}
+		m.adding = true
+		m.addError = ""
+		return m, addStationCmd(m.manager, url)
+	}
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	return m, cmd
 }
 
 func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
@@ -238,6 +367,19 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			target = 0
 		}
 		return m, volumeCmd(m.player, target)
+	case key.Matches(msg, m.keys.Add):
+		if m.manager == nil {
+			return m, nil
+		}
+		m.mode = modeAddStation
+		m.addError = ""
+		m.input.Reset()
+		return m, m.input.Focus()
+	case key.Matches(msg, m.keys.Delete):
+		if m.manager == nil || len(m.stations) <= 1 {
+			return m, nil
+		}
+		return m, removeStationCmd(m.manager, m.stations[m.activeIdx].ID, m.activeIdx)
 	default:
 		for i, b := range m.keys.Stations {
 			if i >= len(m.stations) {

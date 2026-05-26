@@ -10,6 +10,10 @@ type keyMap struct {
 	VolUp     key.Binding
 	VolDown   key.Binding
 	Mute      key.Binding
+	Add       key.Binding
+	Delete    key.Binding
+	Confirm   key.Binding
+	Cancel    key.Binding
 	Quit      key.Binding
 	Stations  []key.Binding
 }
@@ -27,7 +31,11 @@ func defaultKeys() keyMap {
 		VolUp:     key.NewBinding(key.WithKeys("right", "l")),
 		VolDown:   key.NewBinding(key.WithKeys("left", "h")),
 		Mute:      key.NewBinding(key.WithKeys("m")),
-		Quit:      key.NewBinding(key.WithKeys("q", "ctrl+c", "esc")),
+		Add:       key.NewBinding(key.WithKeys("a")),
+		Delete:    key.NewBinding(key.WithKeys("d")),
+		Confirm:   key.NewBinding(key.WithKeys("enter")),
+		Cancel:    key.NewBinding(key.WithKeys("esc")),
+		Quit:      key.NewBinding(key.WithKeys("q", "ctrl+c")),
 		Stations:  stations,
 	}
 }

@@ -27,3 +27,8 @@ type Provider interface {
 	Stations(ctx context.Context) ([]Station, error)
 	Resolve(ctx context.Context, s Station) (Track, error)
 }
+
+type StationManager interface {
+	AddByURL(ctx context.Context, url string) (Station, error)
+	Remove(ctx context.Context, id string) error
+}
