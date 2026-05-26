@@ -34,25 +34,7 @@ var pal = palette{
 	Purple:    lipgloss.Color("#a47ed4"),
 }
 
-const panelWidth = 76
-
 var (
-	styleBase = lipgloss.NewStyle().Foreground(pal.Text)
-
-	stylePanel = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(pal.Border).
-			Width(panelWidth).
-			Padding(0, 2)
-
-	styleTitleBar = lipgloss.NewStyle().
-			Foreground(pal.TextDim).
-			BorderBottom(true).
-			BorderStyle(lipgloss.NormalBorder()).
-			BorderForeground(pal.Border).
-			Width(panelWidth).
-			Padding(0, 2)
-
 	styleLogo = lipgloss.NewStyle().
 			Foreground(pal.Accent).
 			Bold(true)

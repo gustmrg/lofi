@@ -8,11 +8,20 @@ import (
 	"github.com/gustmrg/lofi/internal/ui/components"
 )
 
-func (m *Model) View() string {
-	contentWidth := panelWidth - 4 // panel padding 2 on each side
+const (
+	minWidth = 60
+	hPad     = 2
+)
 
-	title := components.TitleBar(contentWidth, "lofi -- ~/music/streams", "v0.1.0",
-		pal.Red, pal.Accent, pal.Green, pal.TextDim, pal.TextFaint)
+func (m *Model) View() string {
+	width := m.width
+	if width == 0 {
+		width = minWidth + hPad*2
+	}
+	contentWidth := width - hPad*2
+	if contentWidth < minWidth {
+		contentWidth = minWidth
+	}
 
 	header := components.Header(contentWidth,
 		styleLogo.Render("lofi"),
@@ -46,8 +55,6 @@ func (m *Model) View() string {
 	footer := components.Footer(contentWidth, styleFooterKey, styleFooterLabel)
 
 	body := strings.Join([]string{
-		title,
-		"",
 		header,
 		"",
 		np,
@@ -61,12 +68,7 @@ func (m *Model) View() string {
 		footer,
 	}, "\n")
 
-	panel := stylePanel.Render(body)
-
-	if m.width == 0 || m.height == 0 {
-		return panel
-	}
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, panel)
+	return lipgloss.NewStyle().Padding(1, hPad).Render(body)
 }
 
 func statusText(playing bool) string {
@@ -82,4 +84,3 @@ func ambienceTag(on bool) string {
 	}
 	return styleAmbience.Render("[ rain ]")
 }
-
