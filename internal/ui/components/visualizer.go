@@ -6,8 +6,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// blocks indexed 0..7
-var blocks = []string{" ", "_", ".", ":", "|", "I", "H", "#"}
+// blocks indexed 0..7, lower-block elements producing a smooth gradient
+var blocks = []string{" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇"}
 
 func Visualizer(heights []int, maxWidth int, accent, blue, purple, faint lipgloss.Color) string {
 	if maxWidth <= 0 {
