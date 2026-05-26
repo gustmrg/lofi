@@ -10,21 +10,40 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/gustmrg/lofi/internal/player"
 	"github.com/gustmrg/lofi/internal/provider"
 )
 
 const (
 	visualizerBars = 48
 	tickInterval   = 80 * time.Millisecond
+	resolveTimeout = 15 * time.Second
 )
 
 type tickMsg time.Time
 
+type trackResolvedMsg struct {
+	idx   int
+	track provider.Track
+}
+
+type trackErrorMsg struct {
+	idx int
+	err error
+}
+
+type playerErrorMsg struct {
+	err error
+}
+
 type Model struct {
 	prov       provider.Provider
+	player     player.Player
 	stations   []provider.Station
 	activeIdx  int
 	track      provider.Track
+	loading    bool
+	lastError  string
 	elapsed    time.Duration
 	playing    bool
 	volume     int
@@ -37,7 +56,7 @@ type Model struct {
 	lastTick   time.Time
 }
 
-func NewModel(p provider.Provider) (*Model, error) {
+func NewModel(p provider.Provider, pl player.Player) (*Model, error) {
 	stations, err := p.Stations(context.Background())
 	if err != nil {
 		return nil, fmt.Errorf("load stations: %w", err)
@@ -48,35 +67,91 @@ func NewModel(p provider.Provider) (*Model, error) {
 
 	m := &Model{
 		prov:     p,
+		player:   pl,
 		stations: stations,
 		volume:   72,
 		playing:  true,
+		loading:  true,
 		keys:     defaultKeys(),
 		rng:      rand.New(rand.NewSource(time.Now().UnixNano())),
+		track:    provider.Track{Title: stations[0].Name, Artist: "loading…"},
 	}
-	m.loadTrack(0)
 	return m, nil
 }
 
-func (m *Model) loadTrack(idx int) {
+func (m *Model) loadTrack(idx int) tea.Cmd {
 	if idx < 0 || idx >= len(m.stations) {
-		return
+		return nil
 	}
 	m.activeIdx = idx
-	track, err := m.prov.Resolve(context.Background(), m.stations[idx])
-	if err != nil {
-		track = provider.Track{Title: m.stations[idx].Name, Artist: "unknown", Duration: 4 * time.Minute}
-	}
-	m.track = track
+	m.loading = true
+	m.lastError = ""
 	m.elapsed = 0
+	m.track = provider.Track{Title: m.stations[idx].Name, Artist: "loading…"}
+	return tea.Batch(
+		stopCmd(m.player),
+		resolveCmd(m.prov, idx, m.stations[idx]),
+	)
 }
 
 func (m *Model) Init() tea.Cmd {
-	return tick()
+	return tea.Batch(
+		tick(),
+		volumeCmd(m.player, m.volume),
+		resolveCmd(m.prov, 0, m.stations[0]),
+	)
 }
 
 func tick() tea.Cmd {
 	return tea.Tick(tickInterval, func(t time.Time) tea.Msg { return tickMsg(t) })
+}
+
+func resolveCmd(p provider.Provider, idx int, s provider.Station) tea.Cmd {
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), resolveTimeout)
+		defer cancel()
+		t, err := p.Resolve(ctx, s)
+		if err != nil {
+			return trackErrorMsg{idx: idx, err: err}
+		}
+		return trackResolvedMsg{idx: idx, track: t}
+	}
+}
+
+func playCmd(pl player.Player, url string) tea.Cmd {
+	return func() tea.Msg {
+		if err := pl.Play(url); err != nil {
+			return playerErrorMsg{err: err}
+		}
+		return nil
+	}
+}
+
+func pauseCmd(pl player.Player, paused bool) tea.Cmd {
+	return func() tea.Msg {
+		if err := pl.Pause(paused); err != nil {
+			return playerErrorMsg{err: err}
+		}
+		return nil
+	}
+}
+
+func volumeCmd(pl player.Player, v int) tea.Cmd {
+	return func() tea.Msg {
+		if err := pl.SetVolume(v); err != nil {
+			return playerErrorMsg{err: err}
+		}
+		return nil
+	}
+}
+
+func stopCmd(pl player.Player) tea.Cmd {
+	return func() tea.Msg {
+		if err := pl.Stop(); err != nil {
+			return playerErrorMsg{err: err}
+		}
+		return nil
+	}
 }
 
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -98,6 +173,31 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.stepVisualizer(now)
 		return m, tick()
 
+	case trackResolvedMsg:
+		if msg.idx != m.activeIdx {
+			return m, nil
+		}
+		m.track = msg.track
+		m.loading = false
+		m.playing = true
+		m.elapsed = 0
+		return m, playCmd(m.player, msg.track.StreamURL)
+
+	case trackErrorMsg:
+		if msg.idx != m.activeIdx {
+			return m, nil
+		}
+		m.loading = false
+		m.lastError = msg.err.Error()
+		return m, nil
+
+	case playerErrorMsg:
+		if msg.err != nil {
+			m.lastError = msg.err.Error()
+			m.playing = false
+		}
+		return m, nil
+
 	case tea.KeyMsg:
 		return m.handleKey(msg)
 	}
@@ -110,34 +210,41 @@ func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case key.Matches(msg, m.keys.PlayPause):
 		m.playing = !m.playing
+		return m, pauseCmd(m.player, !m.playing)
 	case key.Matches(msg, m.keys.Next):
-		m.loadTrack((m.activeIdx + 1) % len(m.stations))
+		return m, m.loadTrack((m.activeIdx + 1) % len(m.stations))
 	case key.Matches(msg, m.keys.Prev):
-		m.loadTrack((m.activeIdx - 1 + len(m.stations)) % len(m.stations))
+		return m, m.loadTrack((m.activeIdx - 1 + len(m.stations)) % len(m.stations))
 	case key.Matches(msg, m.keys.Shuffle):
 		if len(m.stations) > 1 {
 			next := m.activeIdx
 			for next == m.activeIdx {
 				next = m.rng.Intn(len(m.stations))
 			}
-			m.loadTrack(next)
+			return m, m.loadTrack(next)
 		}
 	case key.Matches(msg, m.keys.VolUp):
 		m.muted = false
 		m.volume = clampInt(m.volume+5, 0, 100)
+		return m, volumeCmd(m.player, m.volume)
 	case key.Matches(msg, m.keys.VolDown):
 		m.muted = false
 		m.volume = clampInt(m.volume-5, 0, 100)
+		return m, volumeCmd(m.player, m.volume)
 	case key.Matches(msg, m.keys.Mute):
 		m.muted = !m.muted
+		target := m.volume
+		if m.muted {
+			target = 0
+		}
+		return m, volumeCmd(m.player, target)
 	default:
 		for i, b := range m.keys.Stations {
 			if i >= len(m.stations) {
 				break
 			}
 			if key.Matches(msg, b) {
-				m.loadTrack(i)
-				return m, nil
+				return m, m.loadTrack(i)
 			}
 		}
 	}
@@ -174,4 +281,3 @@ func clampInt(v, lo, hi int) int {
 	}
 	return v
 }
-

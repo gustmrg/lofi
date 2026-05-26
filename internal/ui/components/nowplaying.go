@@ -7,6 +7,7 @@ type NowPlayingArgs struct {
 	Label      string
 	Title      string
 	Artist     string
+	Error      string
 	Visualizer string
 	Progress   string
 	AccentBar  string
@@ -17,10 +18,15 @@ func NowPlaying(a NowPlayingArgs) string {
 		a.Label,
 		a.Title,
 		a.Artist,
+	}
+	if a.Error != "" {
+		rows = append(rows, a.Error)
+	}
+	rows = append(rows,
 		"",
 		a.Visualizer,
 		a.Progress,
-	}
+	)
 
 	prefix := a.AccentBar + " "
 	out := make([]string, len(rows))

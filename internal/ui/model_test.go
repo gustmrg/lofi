@@ -5,12 +5,13 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/gustmrg/lofi/internal/player"
 	"github.com/gustmrg/lofi/internal/provider/mock"
 )
 
 func newTestModel(t *testing.T) *Model {
 	t.Helper()
-	m, err := NewModel(mock.New())
+	m, err := NewModel(mock.New(), player.Noop{})
 	if err != nil {
 		t.Fatalf("NewModel: %v", err)
 	}

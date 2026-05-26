@@ -69,6 +69,7 @@ var (
 	styleVolFill = lipgloss.NewStyle().Foreground(pal.Green)
 	styleVolBg   = lipgloss.NewStyle().Foreground(pal.Border)
 	styleMuted   = lipgloss.NewStyle().Foreground(pal.Red).Bold(true)
+	styleError   = lipgloss.NewStyle().Foreground(pal.Red)
 
 	styleCtrlBtn = lipgloss.NewStyle().Foreground(pal.TextDim)
 

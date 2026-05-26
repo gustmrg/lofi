@@ -29,11 +29,16 @@ func (m *Model) View() string {
 		styleStatusBadge.Render(statusText(m.playing)),
 	)
 
+	errLine := ""
+	if m.lastError != "" {
+		errLine = styleError.Render("! " + m.lastError)
+	}
 	np := components.NowPlaying(components.NowPlayingArgs{
 		Width:      contentWidth,
 		Label:      styleNPLabel.Render("NOW PLAYING"),
 		Title:      styleNPTitle.Render(m.track.Title),
 		Artist:     styleNPArtist.Render("by " + m.track.Artist),
+		Error:      errLine,
 		Visualizer: components.Visualizer(m.visualizer[:], contentWidth-4, pal.Accent, pal.Blue, pal.Purple, pal.TextFaint),
 		Progress:   components.ProgressBar(contentWidth-4, m.elapsed, m.track.Duration, styleProgressFill, styleProgressBg, styleTime),
 		AccentBar:  styleAccentBar.Render("|"),

@@ -78,7 +78,7 @@ func (p *Provider) Resolve(ctx context.Context, s provider.Station) (provider.Tr
 
 	urlCmd := exec.CommandContext(ctx, p.binary,
 		"--no-playlist",
-		"-f", "bestaudio",
+		"-f", "bestaudio/best",
 		"-g",
 		url,
 	)
@@ -130,6 +130,15 @@ func defaultStations() []provider.Station {
 			Bitrate:     "128k",
 			Source:      id,
 			SourceRef:   "5yx6BWlEVcY",
+		},
+		{
+			ID:          "lofi-daily",
+			Name:        "lofi daily",
+			Description: "the daily driver",
+			Listeners:   0,
+			Bitrate:     "128k",
+			Source:      id,
+			SourceRef:   "E2vONfzoyRI",
 		},
 	}
 }
