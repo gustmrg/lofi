@@ -1,0 +1,767 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>lofi — terminal player</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@300;400;500&display=swap');
+
+  :root {
+    --bg: #0d0f12;
+    --bg-panel: #13161b;
+    --bg-hover: #1a1e25;
+    --bg-active: #1f2430;
+    --border: #252a35;
+    --border-focus: #3d4555;
+    --text: #c5cdd8;
+    --text-dim: #6b7a8d;
+    --text-faint: #3d4a5c;
+    --accent: #e8a86e;
+    --accent-dim: #b07a45;
+    --accent-glow: rgba(232, 168, 110, 0.08);
+    --green: #7ec49d;
+    --green-dim: #4a7a5e;
+    --red: #d46a6a;
+    --blue: #6ea5d4;
+    --purple: #a47ed4;
+    --bar-bg: #1a1e25;
+    --bar-fill: #e8a86e;
+    --scanline: rgba(0, 0, 0, 0.03);
+    --crt-glow: rgba(200, 220, 255, 0.015);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  /* CRT / retro terminal overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      var(--scanline) 0px,
+      var(--scanline) 1px,
+      transparent 1px,
+      transparent 3px
+    );
+    pointer-events: none;
+    z-index: 100;
+  }
+
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(ellipse at center, var(--crt-glow), transparent 70%);
+    pointer-events: none;
+    z-index: 99;
+  }
+
+  .terminal {
+    width: 760px;
+    max-width: 95vw;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow:
+      0 0 0 1px rgba(0,0,0,0.3),
+      0 20px 60px rgba(0,0,0,0.5),
+      0 0 120px rgba(232, 168, 110, 0.03);
+    position: relative;
+  }
+
+  /* Title bar */
+  .titlebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    user-select: none;
+  }
+
+  .titlebar-dots {
+    display: flex;
+    gap: 7px;
+  }
+
+  .titlebar-dots span {
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    display: block;
+  }
+
+  .dot-red { background: var(--red); opacity: 0.8; }
+  .dot-yellow { background: var(--accent); opacity: 0.8; }
+  .dot-green { background: var(--green); opacity: 0.8; }
+
+  .titlebar-text {
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 0.5px;
+  }
+
+  .titlebar-right {
+    font-size: 11px;
+    color: var(--text-faint);
+  }
+
+  /* Main content */
+  .content {
+    padding: 20px;
+  }
+
+  /* Header */
+  .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 24px;
+  }
+
+  .logo {
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 3px;
+    text-transform: lowercase;
+    text-shadow: 0 0 30px rgba(232, 168, 110, 0.15);
+  }
+
+  .logo-sub {
+    font-size: 10px;
+    color: var(--text-faint);
+    letter-spacing: 2px;
+    margin-top: 2px;
+  }
+
+  .status-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: var(--green);
+    padding: 4px 10px;
+    border: 1px solid var(--green-dim);
+    border-radius: 3px;
+    background: rgba(126, 196, 157, 0.05);
+  }
+
+  .status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* Now playing */
+  .now-playing {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 18px;
+    margin-bottom: 16px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .now-playing::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: var(--accent);
+    box-shadow: 0 0 12px rgba(232, 168, 110, 0.3);
+  }
+
+  .np-label {
+    font-size: 10px;
+    color: var(--text-faint);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .np-title {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 3px;
+  }
+
+  .np-artist {
+    font-size: 12px;
+    color: var(--accent-dim);
+    margin-bottom: 14px;
+  }
+
+  /* Visualizer */
+  .visualizer {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 32px;
+    margin-bottom: 14px;
+  }
+
+  .vis-bar {
+    width: 4px;
+    border-radius: 2px 2px 0 0;
+    background: var(--accent);
+    opacity: 0.6;
+    transition: height 0.15s ease;
+  }
+
+  .vis-bar:nth-child(odd) { opacity: 0.4; }
+  .vis-bar:nth-child(3n) { background: var(--blue); opacity: 0.35; }
+  .vis-bar:nth-child(5n) { background: var(--purple); opacity: 0.3; }
+
+  /* Progress bar */
+  .progress-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .progress-time {
+    font-size: 11px;
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+    min-width: 38px;
+  }
+
+  .progress-track {
+    flex: 1;
+    height: 3px;
+    background: var(--bar-bg);
+    border-radius: 2px;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .progress-fill {
+    height: 100%;
+    background: var(--bar-fill);
+    border-radius: 2px;
+    width: 35%;
+    position: relative;
+    transition: width 1s linear;
+  }
+
+  .progress-fill::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px rgba(232, 168, 110, 0.4);
+  }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 24px;
+    padding: 16px 0;
+    margin-bottom: 16px;
+  }
+
+  .ctrl-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: inherit;
+    font-size: 13px;
+    padding: 8px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .ctrl-btn:hover {
+    border-color: var(--border-focus);
+    color: var(--text);
+    background: var(--bg-hover);
+  }
+
+  .ctrl-btn.primary {
+    border-color: var(--accent-dim);
+    color: var(--accent);
+    background: var(--accent-glow);
+    padding: 8px 20px;
+  }
+
+  .ctrl-btn.primary:hover {
+    background: rgba(232, 168, 110, 0.15);
+    border-color: var(--accent);
+  }
+
+  .ctrl-key {
+    font-size: 9px;
+    padding: 1px 5px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    color: var(--text-faint);
+    background: var(--bg);
+  }
+
+  /* Station list */
+  .stations {
+    margin-bottom: 16px;
+  }
+
+  .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-title {
+    font-size: 10px;
+    color: var(--text-faint);
+    letter-spacing: 2px;
+    text-transform: uppercase;
+  }
+
+  .section-count {
+    font-size: 10px;
+    color: var(--text-faint);
+  }
+
+  .station {
+    display: flex;
+    align-items: center;
+    padding: 8px 12px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.15s;
+    gap: 12px;
+  }
+
+  .station:hover {
+    background: var(--bg-hover);
+  }
+
+  .station.active {
+    background: var(--bg-active);
+  }
+
+  .station-indicator {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--text-faint);
+    flex-shrink: 0;
+  }
+
+  .station.active .station-indicator {
+    background: var(--accent);
+    box-shadow: 0 0 8px rgba(232, 168, 110, 0.3);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  .station-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .station-name {
+    font-size: 12px;
+    color: var(--text);
+    font-weight: 500;
+  }
+
+  .station-desc {
+    font-size: 10px;
+    color: var(--text-faint);
+    margin-top: 1px;
+  }
+
+  .station-meta {
+    font-size: 10px;
+    color: var(--text-faint);
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  .station-listeners {
+    color: var(--text-dim);
+  }
+
+  .station-bitrate {
+    color: var(--text-faint);
+  }
+
+  /* Volume */
+  .volume-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 0;
+    margin-bottom: 10px;
+  }
+
+  .vol-label {
+    font-size: 11px;
+    color: var(--text-faint);
+    min-width: 32px;
+  }
+
+  .vol-bar-track {
+    flex: 1;
+    height: 3px;
+    background: var(--bar-bg);
+    border-radius: 2px;
+    max-width: 160px;
+    overflow: hidden;
+  }
+
+  .vol-bar-fill {
+    height: 100%;
+    width: 72%;
+    background: var(--green);
+    border-radius: 2px;
+    opacity: 0.7;
+  }
+
+  .vol-value {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-variant-numeric: tabular-nums;
+    min-width: 30px;
+  }
+
+  /* Footer / keybinds */
+  .footer {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px 0 4px;
+    border-top: 1px solid var(--border);
+  }
+
+  .keybind {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10px;
+    color: var(--text-faint);
+  }
+
+  .keybind kbd {
+    font-family: inherit;
+    font-size: 10px;
+    padding: 1px 6px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: var(--bg);
+    color: var(--text-dim);
+  }
+
+  /* Animations */
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .content > * {
+    animation: fadeIn 0.4s ease forwards;
+    opacity: 0;
+  }
+
+  .content > *:nth-child(1) { animation-delay: 0.05s; }
+  .content > *:nth-child(2) { animation-delay: 0.1s; }
+  .content > *:nth-child(3) { animation-delay: 0.15s; }
+  .content > *:nth-child(4) { animation-delay: 0.2s; }
+  .content > *:nth-child(5) { animation-delay: 0.25s; }
+  .content > *:nth-child(6) { animation-delay: 0.3s; }
+  .content > *:nth-child(7) { animation-delay: 0.35s; }
+
+  /* Rain ambience text */
+  .ambience-tag {
+    font-size: 10px;
+    color: var(--blue);
+    border: 1px solid rgba(110, 165, 212, 0.2);
+    padding: 2px 8px;
+    border-radius: 2px;
+    background: rgba(110, 165, 212, 0.05);
+    display: inline-block;
+    margin-left: 8px;
+  }
+</style>
+</head>
+<body>
+
+<div class="terminal">
+  <div class="titlebar">
+    <div class="titlebar-dots">
+      <span class="dot-red"></span>
+      <span class="dot-yellow"></span>
+      <span class="dot-green"></span>
+    </div>
+    <div class="titlebar-text">lofi — ~/music/streams</div>
+    <div class="titlebar-right">v0.1.0</div>
+  </div>
+
+  <div class="content">
+    <div class="header">
+      <div>
+        <div class="logo">lofi</div>
+        <div class="logo-sub">terminal beats player</div>
+      </div>
+      <div class="status-badge">
+        <span class="status-dot"></span>
+        streaming
+      </div>
+    </div>
+
+    <div class="now-playing">
+      <div class="np-label">now playing</div>
+      <div class="np-title">
+        Moonlit Sidewalk
+        <span class="ambience-tag">☔ rain</span>
+      </div>
+      <div class="np-artist">by sleepytapes</div>
+      <div class="visualizer" id="visualizer"></div>
+      <div class="progress-row">
+        <span class="progress-time" id="elapsed">1:42</span>
+        <div class="progress-track">
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <span class="progress-time" id="total">4:53</span>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button class="ctrl-btn">⏮ <span class="ctrl-key">p</span></button>
+      <button class="ctrl-btn primary" id="playBtn">⏸ pause <span class="ctrl-key">space</span></button>
+      <button class="ctrl-btn">⏭ <span class="ctrl-key">n</span></button>
+      <button class="ctrl-btn">⟳ <span class="ctrl-key">s</span></button>
+    </div>
+
+    <div class="stations">
+      <div class="section-header">
+        <span class="section-title">stations</span>
+        <span class="section-count">5 available</span>
+      </div>
+
+      <div class="station active" data-idx="0">
+        <div class="station-indicator"></div>
+        <div class="station-info">
+          <div class="station-name">☾ midnight drift</div>
+          <div class="station-desc">slow beats · rain ambience · tape hiss</div>
+        </div>
+        <div class="station-meta">
+          <div class="station-listeners">342 ♫</div>
+          <div class="station-bitrate">256k</div>
+        </div>
+      </div>
+
+      <div class="station" data-idx="1">
+        <div class="station-indicator"></div>
+        <div class="station-info">
+          <div class="station-name">✦ café morning</div>
+          <div class="station-desc">jazzy chords · warm keys · coffee shop</div>
+        </div>
+        <div class="station-meta">
+          <div class="station-listeners">518 ♫</div>
+          <div class="station-bitrate">256k</div>
+        </div>
+      </div>
+
+      <div class="station" data-idx="2">
+        <div class="station-indicator"></div>
+        <div class="station-info">
+          <div class="station-name">⌘ code focus</div>
+          <div class="station-desc">minimal · deep · no vocals</div>
+        </div>
+        <div class="station-meta">
+          <div class="station-listeners">891 ♫</div>
+          <div class="station-bitrate">320k</div>
+        </div>
+      </div>
+
+      <div class="station" data-idx="3">
+        <div class="station-indicator"></div>
+        <div class="station-info">
+          <div class="station-name">❄ winter walk</div>
+          <div class="station-desc">ambient pads · soft piano · snowfall</div>
+        </div>
+        <div class="station-meta">
+          <div class="station-listeners">127 ♫</div>
+          <div class="station-bitrate">192k</div>
+        </div>
+      </div>
+
+      <div class="station" data-idx="4">
+        <div class="station-indicator"></div>
+        <div class="station-info">
+          <div class="station-name">◎ vinyl sunset</div>
+          <div class="station-desc">soul samples · warm distortion · analog</div>
+        </div>
+        <div class="station-meta">
+          <div class="station-listeners">263 ♫</div>
+          <div class="station-bitrate">256k</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="volume-row">
+      <span class="vol-label">vol</span>
+      <div class="vol-bar-track">
+        <div class="vol-bar-fill" id="volFill"></div>
+      </div>
+      <span class="vol-value" id="volValue">72%</span>
+    </div>
+
+    <div class="footer">
+      <div class="keybind"><kbd>space</kbd> play/pause</div>
+      <div class="keybind"><kbd>n</kbd> next</div>
+      <div class="keybind"><kbd>p</kbd> prev</div>
+      <div class="keybind"><kbd>s</kbd> shuffle</div>
+      <div class="keybind"><kbd>↑↓</kbd> volume</div>
+      <div class="keybind"><kbd>1-5</kbd> station</div>
+      <div class="keybind"><kbd>r</kbd> rain</div>
+      <div class="keybind"><kbd>q</kbd> quit</div>
+    </div>
+  </div>
+</div>
+
+<script>
+  // Visualizer bars
+  const visContainer = document.getElementById('visualizer');
+  const barCount = 48;
+  const bars = [];
+
+  for (let i = 0; i < barCount; i++) {
+    const bar = document.createElement('div');
+    bar.className = 'vis-bar';
+    bar.style.height = '4px';
+    visContainer.appendChild(bar);
+    bars.push(bar);
+  }
+
+  let playing = true;
+
+  function animateVisualizer() {
+    if (!playing) {
+      bars.forEach(b => b.style.height = '3px');
+      return;
+    }
+    bars.forEach((bar, i) => {
+      const base = Math.sin(Date.now() * 0.002 + i * 0.3) * 0.5 + 0.5;
+      const wave = Math.sin(Date.now() * 0.001 + i * 0.15) * 0.3 + 0.7;
+      const rand = Math.random() * 0.3;
+      const height = Math.max(3, (base * wave + rand) * 28);
+      bar.style.height = `${height}px`;
+    });
+    requestAnimationFrame(animateVisualizer);
+  }
+  animateVisualizer();
+
+  // Progress bar
+  let progress = 35;
+  const progressFill = document.getElementById('progressFill');
+  const elapsed = document.getElementById('elapsed');
+
+  function updateProgress() {
+    if (!playing) return;
+    progress += 0.034;  // ~1% every 30s for a ~5min track
+    if (progress >= 100) progress = 0;
+    progressFill.style.width = `${progress}%`;
+
+    const totalSec = 293; // 4:53
+    const currentSec = Math.floor(totalSec * progress / 100);
+    const m = Math.floor(currentSec / 60);
+    const s = currentSec % 60;
+    elapsed.textContent = `${m}:${String(s).padStart(2, '0')}`;
+  }
+  setInterval(updateProgress, 1000);
+
+  // Play/Pause toggle
+  const playBtn = document.getElementById('playBtn');
+  playBtn.addEventListener('click', () => {
+    playing = !playing;
+    playBtn.innerHTML = playing
+      ? '⏸ pause <span class="ctrl-key">space</span>'
+      : '▶ play <span class="ctrl-key">space</span>';
+    if (playing) animateVisualizer();
+  });
+
+  // Station selection
+  document.querySelectorAll('.station').forEach(station => {
+    station.addEventListener('click', () => {
+      document.querySelectorAll('.station').forEach(s => s.classList.remove('active'));
+      station.classList.add('active');
+      progress = 0;
+    });
+  });
+
+  // Keyboard controls
+  document.addEventListener('keydown', (e) => {
+    if (e.key === ' ') {
+      e.preventDefault();
+      playBtn.click();
+    }
+    if (e.key === 'ArrowUp') {
+      const fill = document.getElementById('volFill');
+      const val = document.getElementById('volValue');
+      let vol = parseInt(val.textContent);
+      vol = Math.min(100, vol + 5);
+      fill.style.width = `${vol}%`;
+      val.textContent = `${vol}%`;
+    }
+    if (e.key === 'ArrowDown') {
+      const fill = document.getElementById('volFill');
+      const val = document.getElementById('volValue');
+      let vol = parseInt(val.textContent);
+      vol = Math.max(0, vol - 5);
+      fill.style.width = `${vol}%`;
+      val.textContent = `${vol}%`;
+    }
+    if (e.key >= '1' && e.key <= '5') {
+      const idx = parseInt(e.key) - 1;
+      const station = document.querySelector(`.station[data-idx="${idx}"]`);
+      if (station) station.click();
+    }
+  });
+</script>
+
+</body>
+</html>
