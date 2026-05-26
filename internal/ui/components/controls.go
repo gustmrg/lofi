@@ -16,9 +16,9 @@ func Controls(width int, btn, primary, keyStyle lipgloss.Style, playing bool) st
 		return btn.Render(text)
 	}
 
-	row := mkBtn("prev", "p", false) +
+	row := mkBtn("prev", "up", false) +
 		"   " + mkBtn(playLabel, "spc", true) +
-		"   " + mkBtn("next", "n", false) +
+		"   " + mkBtn("next", "dn", false) +
 		"   " + mkBtn("shuf", "s", false)
 
 	pad := (width - lipgloss.Width(row)) / 2

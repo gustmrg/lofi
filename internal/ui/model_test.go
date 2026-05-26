@@ -47,16 +47,16 @@ func TestPlayPauseToggle(t *testing.T) {
 	}
 }
 
-func TestNextPrevWrap(t *testing.T) {
+func TestBrowseStationsWrap(t *testing.T) {
 	m := newTestModel(t)
 	last := len(m.stations) - 1
-	m = sendRune(t, m, 'p')
+	m = sendKey(t, m, 0, tea.KeyUp)
 	if m.activeIdx != last {
-		t.Fatalf("prev from 0 should wrap to %d, got %d", last, m.activeIdx)
+		t.Fatalf("up from 0 should wrap to %d, got %d", last, m.activeIdx)
 	}
-	m = sendRune(t, m, 'n')
+	m = sendKey(t, m, 0, tea.KeyDown)
 	if m.activeIdx != 0 {
-		t.Fatalf("next from %d should wrap to 0, got %d", last, m.activeIdx)
+		t.Fatalf("down from %d should wrap to 0, got %d", last, m.activeIdx)
 	}
 }
 
@@ -71,12 +71,12 @@ func TestStationKeys(t *testing.T) {
 func TestVolumeClamp(t *testing.T) {
 	m := newTestModel(t)
 	m.volume = 98
-	m = sendKey(t, m, 0, tea.KeyUp)
+	m = sendKey(t, m, 0, tea.KeyRight)
 	if m.volume != 100 {
 		t.Fatalf("vol up from 98 should clamp to 100, got %d", m.volume)
 	}
 	m.volume = 3
-	m = sendKey(t, m, 0, tea.KeyDown)
+	m = sendKey(t, m, 0, tea.KeyLeft)
 	if m.volume != 0 {
 		t.Fatalf("vol down from 3 should clamp to 0, got %d", m.volume)
 	}
@@ -94,7 +94,7 @@ func TestRainToggle(t *testing.T) {
 func TestSwitchingStationResetsElapsed(t *testing.T) {
 	m := newTestModel(t)
 	m.elapsed = 90_000_000_000
-	m = sendRune(t, m, 'n')
+	m = sendKey(t, m, 0, tea.KeyDown)
 	if m.elapsed != 0 {
 		t.Fatalf("switching station should reset elapsed, got %v", m.elapsed)
 	}

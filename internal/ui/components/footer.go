@@ -12,10 +12,9 @@ type keybind struct {
 
 var bindings = []keybind{
 	{"spc", "play/pause"},
-	{"n", "next"},
-	{"p", "prev"},
+	{"up/dn", "browse stations"},
+	{"l/r", "volume"},
 	{"s", "shuffle"},
-	{"up/dn", "volume"},
 	{"1-5", "station"},
 	{"r", "rain"},
 	{"q", "quit"},
