@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 func Volume(width, vol int, muted bool, label, fill, bg, mutedStyle, value lipgloss.Style) string {

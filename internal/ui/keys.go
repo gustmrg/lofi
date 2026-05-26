@@ -1,6 +1,6 @@
 package ui
 
-import "github.com/charmbracelet/bubbles/key"
+import "charm.land/bubbles/v2/key"
 
 type keyMap struct {
 	PlayPause key.Binding
@@ -24,7 +24,7 @@ func defaultKeys() keyMap {
 		stations[i] = key.NewBinding(key.WithKeys(string(rune('1' + i))))
 	}
 	return keyMap{
-		PlayPause: key.NewBinding(key.WithKeys(" ", "space")),
+		PlayPause: key.NewBinding(key.WithKeys("space")),
 		Next:      key.NewBinding(key.WithKeys("down", "j")),
 		Prev:      key.NewBinding(key.WithKeys("up", "k")),
 		Shuffle:   key.NewBinding(key.WithKeys("s")),

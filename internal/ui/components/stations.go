@@ -2,9 +2,10 @@ package components
 
 import (
 	"fmt"
+	"image/color"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 
 	"github.com/gustmrg/lofi/internal/provider"
 )
@@ -14,7 +15,7 @@ func Stations(
 	stations []provider.Station,
 	activeIdx int,
 	section, sectionRule, active, idle, desc, metaListeners, metaBitrate lipgloss.Style,
-	accent, faint lipgloss.Color,
+	accent, faint color.Color,
 ) string {
 	header := sectionHeader(width, section, sectionRule, "STATIONS", fmt.Sprintf("%d available", len(stations)))
 	rows := make([]string, 0, len(stations)+1)
@@ -44,7 +45,7 @@ func stationRow(
 	isActive bool,
 	s provider.Station,
 	active, idle, desc, metaListeners, metaBitrate lipgloss.Style,
-	accent, faint lipgloss.Color,
+	accent, faint color.Color,
 ) string {
 	indicator := lipgloss.NewStyle().Foreground(faint).Render("[ ]")
 	nameStyle := idle

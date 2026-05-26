@@ -1,6 +1,6 @@
 package components
 
-import "github.com/charmbracelet/lipgloss"
+import "charm.land/lipgloss/v2"
 
 func Header(width int, logo, sub, status string) string {
 	left := lipgloss.JoinVertical(lipgloss.Left, logo, sub)

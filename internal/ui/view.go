@@ -3,7 +3,8 @@ package ui
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/gustmrg/lofi/internal/ui/components"
 )
@@ -13,20 +14,12 @@ const (
 	hPad     = 2
 )
 
-func (m *Model) View() string {
-	width := m.width
-	if width == 0 {
-		width = minWidth + hPad*2
-	}
-	contentWidth := width - hPad*2
-	if contentWidth < minWidth {
-		contentWidth = minWidth
-	}
+func (m *Model) View() tea.View {
+	bg := m.renderBackground()
 
+	var v tea.View
 	if m.mode == modeAddStation {
-		return components.AddStationModal(components.AddStationModalArgs{
-			Width:       width,
-			Height:      m.height,
+		modal := components.AddStationModal(components.AddStationModalArgs{
 			Title:       "ADD STATION",
 			Input:       m.input.View(),
 			Loading:     m.adding,
@@ -37,6 +30,30 @@ func (m *Model) View() string {
 			StatusStyle: styleModalStatus,
 			ErrorStyle:  styleError,
 		})
+		modalW := lipgloss.Width(modal)
+		modalH := lipgloss.Height(modal)
+		x := (m.width - modalW) / 2
+		y := (m.height - modalH) / 2
+		composed := lipgloss.NewCompositor(
+			lipgloss.NewLayer(bg),
+			lipgloss.NewLayer(modal).X(x).Y(y).Z(1),
+		).Render()
+		v.SetContent(composed)
+	} else {
+		v.SetContent(bg)
+	}
+	v.AltScreen = true
+	return v
+}
+
+func (m *Model) renderBackground() string {
+	width := m.width
+	if width == 0 {
+		width = minWidth + hPad*2
+	}
+	contentWidth := width - hPad*2
+	if contentWidth < minWidth {
+		contentWidth = minWidth
 	}
 
 	header := components.Header(contentWidth,
@@ -97,4 +114,3 @@ func statusText(playing bool) string {
 	}
 	return "[ - paused    ]"
 }
-

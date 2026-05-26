@@ -1,6 +1,6 @@
 package components
 
-import "github.com/charmbracelet/lipgloss"
+import "charm.land/lipgloss/v2"
 
 func Controls(width int, btn, primary, keyStyle lipgloss.Style, playing bool) string {
 	playLabel := "pause"

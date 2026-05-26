@@ -1,15 +1,16 @@
 package components
 
 import (
+	"image/color"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // blocks indexed 0..7, lower-block elements producing a smooth gradient
 var blocks = []string{" ", "▁", "▂", "▃", "▄", "▅", "▆", "▇"}
 
-func Visualizer(heights []int, maxWidth int, accent, blue, purple, faint lipgloss.Color) string {
+func Visualizer(heights []int, maxWidth int, accent, blue, purple, faint color.Color) string {
 	if maxWidth <= 0 {
 		maxWidth = len(heights)
 	}

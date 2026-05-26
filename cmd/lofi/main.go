@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/gustmrg/lofi/internal/player"
 	"github.com/gustmrg/lofi/internal/player/mpv"
@@ -32,7 +32,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	prog := tea.NewProgram(model, tea.WithAltScreen())
+	prog := tea.NewProgram(model)
 	if _, err := prog.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "lofi: %v\n", err)
 		os.Exit(1)

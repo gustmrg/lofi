@@ -1,13 +1,10 @@
 package components
 
 import (
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 type AddStationModalArgs struct {
-	Width  int
-	Height int
-
 	Title string
 	Input string
 
@@ -38,15 +35,5 @@ func AddStationModal(a AddStationModalArgs) string {
 		status,
 	)
 
-	box := a.BoxStyle.Render(body)
-
-	w := a.Width
-	if w <= 0 {
-		w = lipgloss.Width(box)
-	}
-	h := a.Height
-	if h <= 0 {
-		h = lipgloss.Height(box)
-	}
-	return lipgloss.Place(w, h, lipgloss.Center, lipgloss.Center, box)
+	return a.BoxStyle.Render(body)
 }

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 func ProgressBar(width int, elapsed, total time.Duration, fill, bg, timeStyle lipgloss.Style) string {

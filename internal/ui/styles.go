@@ -1,21 +1,25 @@
 package ui
 
-import "github.com/charmbracelet/lipgloss"
+import (
+	"image/color"
+
+	"charm.land/lipgloss/v2"
+)
 
 type palette struct {
-	Bg        lipgloss.Color
-	BgPanel   lipgloss.Color
-	BgActive  lipgloss.Color
-	Border    lipgloss.Color
-	Text      lipgloss.Color
-	TextDim   lipgloss.Color
-	TextFaint lipgloss.Color
-	Accent    lipgloss.Color
-	AccentDim lipgloss.Color
-	Green     lipgloss.Color
-	Red       lipgloss.Color
-	Blue      lipgloss.Color
-	Purple    lipgloss.Color
+	Bg        color.Color
+	BgPanel   color.Color
+	BgActive  color.Color
+	Border    color.Color
+	Text      color.Color
+	TextDim   color.Color
+	TextFaint color.Color
+	Accent    color.Color
+	AccentDim color.Color
+	Green     color.Color
+	Red       color.Color
+	Blue      color.Color
+	Purple    color.Color
 }
 
 var pal = palette{

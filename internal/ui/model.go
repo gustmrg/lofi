@@ -7,9 +7,9 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/charmbracelet/bubbles/key"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/key"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/gustmrg/lofi/internal/player"
 	"github.com/gustmrg/lofi/internal/provider"
@@ -100,7 +100,7 @@ func NewModel(p provider.Provider, pl player.Player) (*Model, error) {
 	ti := textinput.New()
 	ti.Placeholder = "https://youtube.com/watch?v=..."
 	ti.CharLimit = 256
-	ti.Width = 56
+	ti.SetWidth(56)
 
 	m := &Model{
 		prov:     p,
@@ -297,7 +297,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lastError = msg.err.Error()
 		return m, nil
 
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if m.mode == modeAddStation {
 			return m.handleAddKey(msg)
 		}
@@ -306,7 +306,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m *Model) handleAddKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleAddKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Cancel):
 		m.mode = modeNormal
@@ -333,7 +333,7 @@ func (m *Model) handleAddKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m *Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
