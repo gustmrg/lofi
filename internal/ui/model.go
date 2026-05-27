@@ -302,6 +302,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.handleAddKey(msg)
 		}
 		return m.handleKey(msg)
+
+	case tea.PasteMsg:
+		if m.mode == modeAddStation {
+			var cmd tea.Cmd
+			m.input, cmd = m.input.Update(msg)
+			return m, cmd
+		}
+		return m, nil
 	}
 	return m, nil
 }
