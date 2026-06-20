@@ -3,6 +3,8 @@ package ui
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -10,6 +12,7 @@ import (
 	"github.com/gustmrg/lofi/internal/player"
 	"github.com/gustmrg/lofi/internal/provider"
 	"github.com/gustmrg/lofi/internal/provider/mock"
+	"github.com/gustmrg/lofi/internal/store"
 )
 
 type fakeStationManager struct {
@@ -30,11 +33,107 @@ func (f *fakeStationManager) Remove(_ context.Context, id string) error {
 
 func newTestModel(t *testing.T) *Model {
 	t.Helper()
+	t.Setenv("HOME", t.TempDir())
+	return newTestModelFromEnv(t)
+}
+
+func newTestModelFromEnv(t *testing.T) *Model {
+	t.Helper()
 	m, err := NewModel(mock.New(), player.Noop{})
 	if err != nil {
 		t.Fatalf("NewModel: %v", err)
 	}
 	return m
+}
+
+func TestDefaultVolume(t *testing.T) {
+	m := newTestModel(t)
+	if m.volume != defaultVolume {
+		t.Fatalf("default volume = %d, want %d", m.volume, defaultVolume)
+	}
+	cfg, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected missing config to be created")
+	}
+	if cfg.Volume != defaultVolume {
+		t.Fatalf("created config volume = %d, want %d", cfg.Volume, defaultVolume)
+	}
+}
+
+func TestSavedVolumeLoaded(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if err := store.SaveConfig(store.Config{Volume: 45}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	m := newTestModelFromEnv(t)
+	if m.volume != 45 {
+		t.Fatalf("loaded volume = %d, want 45", m.volume)
+	}
+}
+
+func TestSavedVolumeClamped(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	if err := store.SaveConfig(store.Config{Volume: 145}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+	m := newTestModelFromEnv(t)
+	if m.volume != 100 {
+		t.Fatalf("loaded volume = %d, want 100", m.volume)
+	}
+	cfg, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected config to exist")
+	}
+	if cfg.Volume != 100 {
+		t.Fatalf("rewritten config volume = %d, want 100", cfg.Volume)
+	}
+}
+
+func TestMalformedConfigFallsBackToDefaultVolume(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".lofi")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "config.json"), []byte("{"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	m := newTestModelFromEnv(t)
+	if m.volume != defaultVolume {
+		t.Fatalf("volume after malformed config = %d, want %d", m.volume, defaultVolume)
+	}
+	cfg, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig after rewrite: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected malformed config to be rewritten")
+	}
+	if cfg.Volume != defaultVolume {
+		t.Fatalf("rewritten config volume = %d, want %d", cfg.Volume, defaultVolume)
+	}
+}
+
+func TestVolumeChangePersists(t *testing.T) {
+	m := newTestModel(t)
+	m = sendSpecial(t, m, tea.KeyRight)
+	cfg, err := store.LoadConfig()
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg == nil {
+		t.Fatal("expected config to be saved")
+	}
+	if cfg.Volume != defaultVolume+5 {
+		t.Fatalf("saved volume = %d, want %d", cfg.Volume, defaultVolume+5)
+	}
 }
 
 func sendString(t *testing.T, m *Model, s string) *Model {

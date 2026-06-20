@@ -13,12 +13,14 @@ import (
 
 	"github.com/gustmrg/lofi/internal/player"
 	"github.com/gustmrg/lofi/internal/provider"
+	"github.com/gustmrg/lofi/internal/store"
 )
 
 const (
 	visualizerBars = 48
 	tickInterval   = 80 * time.Millisecond
 	resolveTimeout = 15 * time.Second
+	defaultVolume  = 70
 )
 
 type uiMode int
@@ -109,12 +111,14 @@ func NewModel(p provider.Provider, pl player.Player) (*Model, error) {
 	ti.CharLimit = 256
 	ti.SetWidth(56)
 
+	volume, configErr := loadVolume()
+
 	m := &Model{
 		prov:     p,
 		manager:  mgr,
 		player:   pl,
 		stations: stations,
-		volume:   72,
+		volume:   volume,
 		playing:  true,
 		loading:  true,
 		keys:     defaultKeys(),
@@ -122,7 +126,23 @@ func NewModel(p provider.Provider, pl player.Player) (*Model, error) {
 		track:    provider.Track{Title: stations[0].Name, Artist: "loading…"},
 		input:    ti,
 	}
+	if configErr != nil {
+		m.lastError = fmt.Sprintf("save config: %v", configErr)
+	}
 	return m, nil
+}
+
+func loadVolume() (int, error) {
+	cfg, err := store.LoadConfig()
+	if err != nil || cfg == nil {
+		return defaultVolume, store.SaveConfig(store.Config{Volume: defaultVolume})
+	}
+
+	volume := clampInt(cfg.Volume, 0, 100)
+	if volume != cfg.Volume {
+		return volume, store.SaveConfig(store.Config{Volume: volume})
+	}
+	return volume, nil
 }
 
 func (m *Model) loadTrack(idx int) tea.Cmd {
@@ -211,6 +231,12 @@ func volumeCmd(pl player.Player, v int) tea.Cmd {
 			return playerErrorMsg{err: err}
 		}
 		return nil
+	}
+}
+
+func (m *Model) persistVolume() {
+	if err := store.SaveConfig(store.Config{Volume: m.volume}); err != nil {
+		m.lastError = fmt.Sprintf("save config: %v", err)
 	}
 }
 
@@ -415,10 +441,12 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.VolUp):
 		m.muted = false
 		m.volume = clampInt(m.volume+5, 0, 100)
+		m.persistVolume()
 		return m, volumeCmd(m.player, m.volume)
 	case key.Matches(msg, m.keys.VolDown):
 		m.muted = false
 		m.volume = clampInt(m.volume-5, 0, 100)
+		m.persistVolume()
 		return m, volumeCmd(m.player, m.volume)
 	case key.Matches(msg, m.keys.Mute):
 		m.muted = !m.muted
