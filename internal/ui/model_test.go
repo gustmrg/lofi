@@ -214,6 +214,9 @@ func TestStatusBadgeTextSameLength(t *testing.T) {
 	badges := []string{
 		statusBadgeText("ok healthy"),
 		statusBadgeText("~ unstable"),
+		statusBadgeText("^ unstable"),
+		statusBadgeText(".   connecting"),
+		statusBadgeText("..  connecting"),
 		statusBadgeText("... connecting"),
 		statusBadgeText("! disconnected"),
 		statusBadgeText("- paused"),
@@ -222,6 +225,41 @@ func TestStatusBadgeTextSameLength(t *testing.T) {
 	for _, badge := range badges[1:] {
 		if len(badge) != want {
 			t.Fatalf("badge %q length = %d, want %d", badge, len(badge), want)
+		}
+	}
+}
+
+func TestConnectingStatusBadgeLabelsAnimate(t *testing.T) {
+	cases := []struct {
+		frame int
+		want  string
+	}{
+		{0, ".   connecting"},
+		{1, "..  connecting"},
+		{2, "... connecting"},
+		{3, ".   connecting"},
+	}
+	for _, tc := range cases {
+		got := statusBadgeLabel(healthReconnecting, tc.frame)
+		if got != tc.want {
+			t.Fatalf("frame %d label = %q, want %q", tc.frame, got, tc.want)
+		}
+	}
+}
+
+func TestUnstableStatusBadgeLabelsAnimate(t *testing.T) {
+	cases := []struct {
+		frame int
+		want  string
+	}{
+		{0, "~ unstable"},
+		{1, "^ unstable"},
+		{2, "~ unstable"},
+	}
+	for _, tc := range cases {
+		got := statusBadgeLabel(healthUnstable, tc.frame)
+		if got != tc.want {
+			t.Fatalf("frame %d label = %q, want %q", tc.frame, got, tc.want)
 		}
 	}
 }

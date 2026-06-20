@@ -2,6 +2,7 @@ package ui
 
 import (
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -93,7 +94,7 @@ func (m *Model) renderBackground() string {
 	header := components.Header(contentWidth,
 		styleLogo.Render("lofi"),
 		styleLogoSub.Render("terminal beats player"),
-		statusBadge(m.playing, m.health),
+		statusBadge(m.playing, m.health, m.lastTick),
 	)
 
 	errLine := ""
@@ -142,7 +143,8 @@ func (m *Model) renderBackground() string {
 	return lipgloss.NewStyle().Padding(1, hPad).Render(body)
 }
 
-func statusBadge(playing bool, health connectionHealth) string {
+func statusBadge(playing bool, health connectionHealth, t time.Time) string {
+	frame := statusFrame(t)
 	if !playing {
 		return styleStatusPaused.Render(statusBadgeText("- paused"))
 	}
@@ -150,13 +152,41 @@ func statusBadge(playing bool, health connectionHealth) string {
 	case healthHealthy:
 		return styleStatusHealthy.Render(statusBadgeText("ok healthy"))
 	case healthUnstable:
-		return styleStatusUnstable.Render(statusBadgeText("~ unstable"))
+		return styleStatusUnstable.Render(statusBadgeText(statusBadgeLabel(healthUnstable, frame)))
 	case healthReconnecting:
-		return styleStatusReconnecting.Render(statusBadgeText("... connecting"))
+		return styleStatusReconnecting.Render(statusBadgeText(statusBadgeLabel(healthReconnecting, frame)))
 	case healthDisconnected:
 		return styleStatusDisconnected.Render(statusBadgeText("! disconnected"))
 	default:
-		return styleStatusReconnecting.Render(statusBadgeText("... connecting"))
+		return styleStatusReconnecting.Render(statusBadgeText(statusBadgeLabel(healthReconnecting, frame)))
+	}
+}
+
+func statusFrame(t time.Time) int {
+	if t.IsZero() {
+		return 0
+	}
+	return int(t.UnixNano() / int64(250*time.Millisecond))
+}
+
+func statusBadgeLabel(health connectionHealth, frame int) string {
+	switch health {
+	case healthUnstable:
+		if frame%2 == 0 {
+			return "~ unstable"
+		}
+		return "^ unstable"
+	case healthReconnecting:
+		switch frame % 3 {
+		case 0:
+			return ".   connecting"
+		case 1:
+			return "..  connecting"
+		default:
+			return "... connecting"
+		}
+	default:
+		return ""
 	}
 }
 
