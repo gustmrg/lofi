@@ -46,11 +46,11 @@ var (
 	styleLogoSub = lipgloss.NewStyle().
 			Foreground(pal.TextFaint)
 
-	styleStatusHealthy       = lipgloss.NewStyle().Foreground(pal.Green)
-	styleStatusUnstable      = lipgloss.NewStyle().Foreground(pal.Accent)
-	styleStatusReconnecting  = lipgloss.NewStyle().Foreground(pal.Blue)
+	styleStatusHealthy      = lipgloss.NewStyle().Foreground(pal.Green)
+	styleStatusUnstable     = lipgloss.NewStyle().Foreground(pal.Accent)
+	styleStatusReconnecting = lipgloss.NewStyle().Foreground(pal.Blue)
 	styleStatusDisconnected = lipgloss.NewStyle().Foreground(pal.Red).Bold(true)
-	styleStatusPaused        = lipgloss.NewStyle().Foreground(pal.TextDim)
+	styleStatusPaused       = lipgloss.NewStyle().Foreground(pal.TextDim)
 
 	styleSection = lipgloss.NewStyle().
 			Foreground(pal.TextFaint).
@@ -73,6 +73,8 @@ var (
 
 	styleProgressFill = lipgloss.NewStyle().Foreground(pal.Accent)
 	styleProgressBg   = lipgloss.NewStyle().Foreground(pal.Border)
+
+	styleLoading = lipgloss.NewStyle().Foreground(pal.Blue)
 
 	styleVolFill = lipgloss.NewStyle().Foreground(pal.Green)
 	styleVolBg   = lipgloss.NewStyle().Foreground(pal.Border)

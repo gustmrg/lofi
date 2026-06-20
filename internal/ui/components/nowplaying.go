@@ -10,6 +10,7 @@ type NowPlayingArgs struct {
 	Error      string
 	Visualizer string
 	Progress   string
+	Loading    string
 	AccentBar  string
 }
 
@@ -22,11 +23,13 @@ func NowPlaying(a NowPlayingArgs) string {
 	if a.Error != "" {
 		rows = append(rows, a.Error)
 	}
-	rows = append(rows,
-		"",
-		a.Visualizer,
-		a.Progress,
-	)
+	rows = append(rows, "")
+
+	progressRow := a.Progress
+	if a.Loading != "" {
+		progressRow = a.Loading
+	}
+	rows = append(rows, a.Visualizer, progressRow)
 
 	prefix := a.AccentBar + " "
 	out := make([]string, len(rows))

@@ -17,11 +17,11 @@ import (
 )
 
 const (
-	visualizerBars      = 48
-	tickInterval        = 80 * time.Millisecond
-	resolveTimeout      = 15 * time.Second
+	visualizerBars     = 48
+	tickInterval       = 80 * time.Millisecond
+	resolveTimeout     = 15 * time.Second
 	streamStartTimeout = 20 * time.Second
-	defaultVolume       = 70
+	defaultVolume      = 70
 )
 
 type uiMode int
@@ -81,26 +81,27 @@ type removeErrorMsg struct {
 }
 
 type Model struct {
-	prov       provider.Provider
-	manager    provider.StationManager
-	player     player.Player
-	stations   []provider.Station
-	activeIdx  int
-	track      provider.Track
-	loading    bool
-	lastError  string
-	elapsed    time.Duration
-	playing     bool
-	health      connectionHealth
-	healthSince time.Time
-	volume     int
-	muted      bool
-	visualizer [visualizerBars]int
-	width      int
-	height     int
-	keys       keyMap
-	rng        *rand.Rand
-	lastTick   time.Time
+	prov          provider.Provider
+	manager       provider.StationManager
+	player        player.Player
+	stations      []provider.Station
+	activeIdx     int
+	track         provider.Track
+	loading       bool
+	lastError     string
+	elapsed       time.Duration
+	playing       bool
+	streamStarted bool
+	health        connectionHealth
+	healthSince   time.Time
+	volume        int
+	muted         bool
+	visualizer    [visualizerBars]int
+	width         int
+	height        int
+	keys          keyMap
+	rng           *rand.Rand
+	lastTick      time.Time
 
 	mode     uiMode
 	input    textinput.Model
@@ -132,11 +133,11 @@ func NewModel(p provider.Provider, pl player.Player) (*Model, error) {
 	volume, configErr := loadVolume()
 
 	m := &Model{
-		prov:     p,
-		manager:  mgr,
-		player:   pl,
-		stations: stations,
-		volume:   volume,
+		prov:        p,
+		manager:     mgr,
+		player:      pl,
+		stations:    stations,
+		volume:      volume,
 		playing:     true,
 		health:      healthReconnecting,
 		healthSince: time.Now(),
@@ -171,6 +172,7 @@ func (m *Model) loadTrack(idx int) tea.Cmd {
 	}
 	m.activeIdx = idx
 	m.loading = true
+	m.streamStarted = false
 	m.health = healthReconnecting
 	m.healthSince = time.Now()
 	m.lastError = ""
@@ -280,6 +282,10 @@ func (m *Model) applyPlayerEvent(event player.Event) {
 	switch event.Kind {
 	case player.EventHealthy:
 		if m.playing {
+			if !m.streamStarted {
+				m.streamStarted = true
+				m.elapsed = 0
+			}
 			m.health = healthHealthy
 			m.healthSince = time.Now()
 		}
@@ -296,6 +302,7 @@ func (m *Model) applyPlayerEvent(event player.Event) {
 			m.health = healthReconnecting
 			return
 		}
+		m.streamStarted = false
 		m.health = healthDisconnected
 		m.healthSince = time.Now()
 		if event.Detail != "" {
@@ -324,7 +331,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tickMsg:
 		now := time.Time(msg)
-		if !m.lastTick.IsZero() && m.playing {
+		if !m.lastTick.IsZero() && m.playing && m.streamStarted {
 			delta := now.Sub(m.lastTick)
 			m.elapsed += delta
 			if m.track.Duration > 0 && m.elapsed >= m.track.Duration {
@@ -347,6 +354,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.track = msg.track
 		m.loading = false
 		m.playing = true
+		m.streamStarted = false
 		m.health = healthReconnecting
 		m.healthSince = time.Now()
 		m.elapsed = 0
@@ -579,7 +587,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 func (m *Model) stepVisualizer(now time.Time) {
 	t := float64(now.UnixNano()) / 1e9
 	for i := range m.visualizer {
-		if !m.playing {
+		if !m.playing || !m.streamStarted {
 			m.visualizer[i] = 0
 			continue
 		}

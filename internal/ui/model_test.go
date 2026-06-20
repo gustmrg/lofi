@@ -375,9 +375,95 @@ func TestVolumeKeyUnmutes(t *testing.T) {
 func TestSwitchingStationResetsElapsed(t *testing.T) {
 	m := newTestModel(t)
 	m.elapsed = 90_000_000_000
+	m.streamStarted = true
 	m = sendSpecial(t, m, tea.KeyDown)
 	if m.elapsed != 0 {
 		t.Fatalf("switching station should reset elapsed, got %v", m.elapsed)
+	}
+	if m.streamStarted {
+		t.Fatal("switching station should reset streamStarted to false")
+	}
+}
+
+func TestTimerDoesNotAdvanceBeforePlaybackStarts(t *testing.T) {
+	m := newTestModel(t)
+	updated, _ := m.Update(trackResolvedMsg{idx: m.activeIdx, track: provider.Track{Title: "t", Artist: "a", Duration: 4 * time.Minute}})
+	m = updated.(*Model)
+	if m.streamStarted {
+		t.Fatal("expected streamStarted=false after resolve")
+	}
+	if !m.playing {
+		t.Fatal("expected playing=true after resolve")
+	}
+
+	t0 := time.Now()
+	updated, _ = m.Update(tickMsg(t0))
+	m = updated.(*Model)
+	updated, _ = m.Update(tickMsg(t0.Add(tickInterval)))
+	m = updated.(*Model)
+	if m.elapsed != 0 {
+		t.Fatalf("elapsed = %v, want 0 before playback starts", m.elapsed)
+	}
+}
+
+func TestEventHealthyStartsTimerAndResetsElapsed(t *testing.T) {
+	m := newTestModel(t)
+	m.playing = true
+	m.streamStarted = false
+	m.elapsed = 5 * time.Second
+
+	updated, _ := m.Update(playerEventMsg{event: player.Event{Kind: player.EventHealthy}})
+	m = updated.(*Model)
+	if !m.streamStarted {
+		t.Fatal("expected streamStarted=true after healthy event")
+	}
+	if m.elapsed != 0 {
+		t.Fatalf("elapsed = %v, want 0 reset on stream start", m.elapsed)
+	}
+
+	t0 := time.Now()
+	updated, _ = m.Update(tickMsg(t0))
+	m = updated.(*Model)
+	updated, _ = m.Update(tickMsg(t0.Add(tickInterval)))
+	m = updated.(*Model)
+	if m.elapsed <= 0 {
+		t.Fatalf("elapsed = %v, want >0 after tick once started", m.elapsed)
+	}
+}
+
+func TestSubsequentHealthyDoesNotResetElapsed(t *testing.T) {
+	m := newTestModel(t)
+	m.playing = true
+	m.streamStarted = true
+	m.elapsed = 10 * time.Second
+
+	updated, _ := m.Update(playerEventMsg{event: player.Event{Kind: player.EventHealthy}})
+	m = updated.(*Model)
+	if m.elapsed != 10*time.Second {
+		t.Fatalf("elapsed = %v, want 10s (not reset by subsequent healthy)", m.elapsed)
+	}
+}
+
+func TestDisconnectMidPlaybackFreezesTimer(t *testing.T) {
+	m := newTestModel(t)
+	m.loading = false
+	m.playing = true
+	m.streamStarted = true
+	m.elapsed = 30 * time.Second
+
+	updated, _ := m.Update(playerEventMsg{event: player.Event{Kind: player.EventDisconnected, Detail: "stream ended"}})
+	m = updated.(*Model)
+	if m.streamStarted {
+		t.Fatal("expected streamStarted=false after disconnect")
+	}
+
+	t0 := time.Now()
+	updated, _ = m.Update(tickMsg(t0))
+	m = updated.(*Model)
+	updated, _ = m.Update(tickMsg(t0.Add(tickInterval)))
+	m = updated.(*Model)
+	if m.elapsed != 30*time.Second {
+		t.Fatalf("elapsed = %v, want 30s (frozen after disconnect)", m.elapsed)
 	}
 }
 

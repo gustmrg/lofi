@@ -101,6 +101,17 @@ func (m *Model) renderBackground() string {
 	if m.lastError != "" {
 		errLine = styleError.Render("! " + m.lastError)
 	}
+
+	var progressRow, loadingRow string
+	switch {
+	case m.loading:
+		loadingRow = styleLoading.Render(animatedDots("Loading", m.lastTick))
+	case !m.streamStarted:
+		loadingRow = styleLoading.Render(animatedDots("Connecting", m.lastTick))
+	default:
+		progressRow = components.ProgressBar(contentWidth-4, m.elapsed, m.track.Duration, styleProgressFill, styleProgressBg, styleTime)
+	}
+
 	np := components.NowPlaying(components.NowPlayingArgs{
 		Width:      contentWidth,
 		Label:      styleNPLabel.Render("NOW PLAYING"),
@@ -108,7 +119,8 @@ func (m *Model) renderBackground() string {
 		Artist:     styleNPArtist.Render("by " + m.track.Artist),
 		Error:      errLine,
 		Visualizer: components.Visualizer(m.visualizer[:], contentWidth-4, pal.Accent, pal.Blue, pal.Purple, pal.TextFaint),
-		Progress:   components.ProgressBar(contentWidth-4, m.elapsed, m.track.Duration, styleProgressFill, styleProgressBg, styleTime),
+		Progress:   progressRow,
+		Loading:    loadingRow,
 		AccentBar:  styleAccentBar.Render("|"),
 	})
 
@@ -196,4 +208,10 @@ func statusBadgeText(text string) string {
 		text = text[:bodyWidth]
 	}
 	return "[ " + text + strings.Repeat(" ", bodyWidth-len(text)) + " ]"
+}
+
+func animatedDots(base string, t time.Time) string {
+	frame := statusFrame(t)
+	dots := strings.Repeat(".", (frame%3)+1)
+	return base + dots
 }
