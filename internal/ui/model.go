@@ -17,7 +17,11 @@ import (
 )
 
 const (
-	visualizerBars     = 48
+	visualizerMaxBars  = 256
+	visualizerMaxLevel = 7.0
+	visualizerGravity  = 0.92
+	visualizerEase     = 0.3
+	visualizerImpulse  = 0.35
 	tickInterval       = 80 * time.Millisecond
 	resolveTimeout     = 15 * time.Second
 	streamStartTimeout = 20 * time.Second
@@ -96,12 +100,15 @@ type Model struct {
 	healthSince   time.Time
 	volume        int
 	muted         bool
-	visualizer    [visualizerBars]int
+	visualizer    [visualizerMaxBars]int
+	visCurr       [visualizerMaxBars]float64
+	visTarget     [visualizerMaxBars]float64
 	width         int
 	height        int
 	keys          keyMap
 	rng           *rand.Rand
 	lastTick      time.Time
+	beatPhase     float64
 
 	mode     uiMode
 	input    textinput.Model
@@ -585,21 +592,33 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 func (m *Model) stepVisualizer(now time.Time) {
-	t := float64(now.UnixNano()) / 1e9
-	for i := range m.visualizer {
-		if !m.playing || !m.streamStarted {
+	if !m.playing || !m.streamStarted {
+		for i := range m.visualizer {
 			m.visualizer[i] = 0
-			continue
+			m.visCurr[i] = 0
+			m.visTarget[i] = 0
 		}
-		base := math.Sin(t*2.0+float64(i)*0.3)*0.5 + 0.5
-		wave := math.Sin(t*1.0+float64(i)*0.15)*0.3 + 0.7
-		noise := m.rng.Float64() * 0.3
-		h := (base*wave + noise) * 7.0
+		return
+	}
+
+	m.beatPhase += tickInterval.Seconds()
+	beat := math.Sin(m.beatPhase*1.6)*0.5 + 0.5
+
+	for i := range m.visualizer {
+		m.visTarget[i] *= visualizerGravity
+
+		if m.rng.Float64() < visualizerImpulse*(0.3+0.7*beat) {
+			m.visTarget[i] = m.rng.Float64() * visualizerMaxLevel
+		}
+
+		m.visCurr[i] += (m.visTarget[i] - m.visCurr[i]) * visualizerEase
+
+		h := m.visCurr[i]
 		if h < 0 {
 			h = 0
 		}
-		if h > 7 {
-			h = 7
+		if h > visualizerMaxLevel {
+			h = visualizerMaxLevel
 		}
 		m.visualizer[i] = int(h)
 	}

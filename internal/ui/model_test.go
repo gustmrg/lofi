@@ -593,3 +593,45 @@ func TestDeleteErrorKeepsConfirmationOpen(t *testing.T) {
 		t.Fatalf("remove error = %q, want remove failed", m.removeError)
 	}
 }
+
+func TestVisualizerStaysInRange(t *testing.T) {
+	m := newTestModel(t)
+	m.playing = true
+	m.streamStarted = true
+	t0 := time.Now()
+	for i := 0; i < 100; i++ {
+		updated, _ := m.Update(tickMsg(t0.Add(time.Duration(i) * tickInterval)))
+		m = updated.(*Model)
+	}
+	for i, h := range m.visualizer {
+		if h < 0 || h > 7 {
+			t.Fatalf("visualizer[%d] = %d, want 0..7", i, h)
+		}
+	}
+}
+
+func TestVisualizerFlatWhenNotPlaying(t *testing.T) {
+	m := newTestModel(t)
+	m.playing = false
+	m.streamStarted = true
+	updated, _ := m.Update(tickMsg(time.Now()))
+	m = updated.(*Model)
+	for i, h := range m.visualizer {
+		if h != 0 {
+			t.Fatalf("visualizer[%d] = %d, want 0 when not playing", i, h)
+		}
+	}
+}
+
+func TestVisualizerFlatBeforeStreamStart(t *testing.T) {
+	m := newTestModel(t)
+	m.playing = true
+	m.streamStarted = false
+	updated, _ := m.Update(tickMsg(time.Now()))
+	m = updated.(*Model)
+	for i, h := range m.visualizer {
+		if h != 0 {
+			t.Fatalf("visualizer[%d] = %d, want 0 before stream start", i, h)
+		}
+	}
+}

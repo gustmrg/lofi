@@ -118,7 +118,7 @@ func (m *Model) renderBackground() string {
 		Title:      styleNPTitle.Render(m.track.Title),
 		Artist:     styleNPArtist.Render("by " + m.track.Artist),
 		Error:      errLine,
-		Visualizer: components.Visualizer(m.visualizer[:], contentWidth-4, pal.Accent, pal.Blue, pal.Purple, pal.TextFaint),
+		Visualizer: components.Visualizer(m.visualizer[:], contentWidth-4, pal.TextFaint, pal.Accent),
 		Progress:   progressRow,
 		Loading:    loadingRow,
 		AccentBar:  styleAccentBar.Render("|"),
