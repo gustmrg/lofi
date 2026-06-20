@@ -305,13 +305,23 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.PasteMsg:
 		if m.mode == modeAddStation {
-			var cmd tea.Cmd
-			m.input, cmd = m.input.Update(msg)
-			return m, cmd
+			return m.updateAddInput(msg)
 		}
 		return m, nil
 	}
+	if m.mode == modeAddStation {
+		return m.updateAddInput(msg)
+	}
 	return m, nil
+}
+
+func (m *Model) updateAddInput(msg tea.Msg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	m.input, cmd = m.input.Update(msg)
+	if m.input.Err != nil {
+		m.addError = m.input.Err.Error()
+	}
+	return m, cmd
 }
 
 func (m *Model) handleAddKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -336,9 +346,7 @@ func (m *Model) handleAddKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.addError = ""
 		return m, addStationCmd(m.manager, url)
 	}
-	var cmd tea.Cmd
-	m.input, cmd = m.input.Update(msg)
-	return m, cmd
+	return m.updateAddInput(msg)
 }
 
 func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {

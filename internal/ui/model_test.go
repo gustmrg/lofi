@@ -1,13 +1,25 @@
 package ui
 
 import (
+	"context"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/gustmrg/lofi/internal/player"
+	"github.com/gustmrg/lofi/internal/provider"
 	"github.com/gustmrg/lofi/internal/provider/mock"
 )
+
+type fakeStationManager struct{}
+
+func (fakeStationManager) AddByURL(context.Context, string) (provider.Station, error) {
+	return provider.Station{}, nil
+}
+
+func (fakeStationManager) Remove(context.Context, string) error {
+	return nil
+}
 
 func newTestModel(t *testing.T) *Model {
 	t.Helper()
@@ -30,6 +42,16 @@ func sendSpecial(t *testing.T, m *Model, code rune) *Model {
 	msg := tea.KeyPressMsg{Code: code}
 	updated, _ := m.Update(msg)
 	return updated.(*Model)
+}
+
+func enterAddMode(t *testing.T, m *Model) *Model {
+	t.Helper()
+	m.manager = fakeStationManager{}
+	m = sendString(t, m, "a")
+	if m.mode != modeAddStation {
+		t.Fatal("expected add station mode")
+	}
+	return m
 }
 
 func TestPlayPauseToggle(t *testing.T) {
@@ -112,5 +134,36 @@ func TestSwitchingStationResetsElapsed(t *testing.T) {
 	m = sendSpecial(t, m, tea.KeyDown)
 	if m.elapsed != 0 {
 		t.Fatalf("switching station should reset elapsed, got %v", m.elapsed)
+	}
+}
+
+func TestAddStationTypingUpdatesInput(t *testing.T) {
+	m := enterAddMode(t, newTestModel(t))
+	m = sendString(t, m, "h")
+	m = sendString(t, m, "t")
+	if got, want := m.input.Value(), "ht"; got != want {
+		t.Fatalf("input value = %q, want %q", got, want)
+	}
+}
+
+func TestAddStationBracketedPasteUpdatesInput(t *testing.T) {
+	m := enterAddMode(t, newTestModel(t))
+	url := "https://www.youtube.com/watch?v=jfKfPfyJRdk"
+	updated, _ := m.Update(tea.PasteMsg{Content: url})
+	m = updated.(*Model)
+	if got := m.input.Value(); got != url {
+		t.Fatalf("input value = %q, want %q", got, url)
+	}
+}
+
+func TestAddStationCancelResetsInput(t *testing.T) {
+	m := enterAddMode(t, newTestModel(t))
+	m = sendString(t, m, "x")
+	m = sendSpecial(t, m, tea.KeyEsc)
+	if m.mode != modeNormal {
+		t.Fatal("expected normal mode after cancel")
+	}
+	if got := m.input.Value(); got != "" {
+		t.Fatalf("input value after cancel = %q, want empty", got)
 	}
 }
