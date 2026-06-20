@@ -93,7 +93,7 @@ func (m *Model) renderBackground() string {
 	header := components.Header(contentWidth,
 		styleLogo.Render("lofi"),
 		styleLogoSub.Render("terminal beats player"),
-		styleStatusBadge.Render(statusText(m.playing)),
+		statusBadge(m.playing, m.health),
 	)
 
 	errLine := ""
@@ -142,9 +142,28 @@ func (m *Model) renderBackground() string {
 	return lipgloss.NewStyle().Padding(1, hPad).Render(body)
 }
 
-func statusText(playing bool) string {
-	if playing {
-		return "[ * streaming ]"
+func statusBadge(playing bool, health connectionHealth) string {
+	if !playing {
+		return styleStatusPaused.Render(statusBadgeText("- paused"))
 	}
-	return "[ - paused    ]"
+	switch health {
+	case healthHealthy:
+		return styleStatusHealthy.Render(statusBadgeText("ok healthy"))
+	case healthUnstable:
+		return styleStatusUnstable.Render(statusBadgeText("~ unstable"))
+	case healthReconnecting:
+		return styleStatusReconnecting.Render(statusBadgeText("... connecting"))
+	case healthDisconnected:
+		return styleStatusDisconnected.Render(statusBadgeText("! disconnected"))
+	default:
+		return styleStatusReconnecting.Render(statusBadgeText("... connecting"))
+	}
+}
+
+func statusBadgeText(text string) string {
+	const bodyWidth = 14
+	if len(text) > bodyWidth {
+		text = text[:bodyWidth]
+	}
+	return "[ " + text + strings.Repeat(" ", bodyWidth-len(text)) + " ]"
 }

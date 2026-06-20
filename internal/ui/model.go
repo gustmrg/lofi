@@ -17,10 +17,11 @@ import (
 )
 
 const (
-	visualizerBars = 48
-	tickInterval   = 80 * time.Millisecond
-	resolveTimeout = 15 * time.Second
-	defaultVolume  = 70
+	visualizerBars      = 48
+	tickInterval        = 80 * time.Millisecond
+	resolveTimeout      = 15 * time.Second
+	streamStartTimeout = 20 * time.Second
+	defaultVolume       = 70
 )
 
 type uiMode int
@@ -30,6 +31,15 @@ const (
 	modeAddStation
 	modeConfirmDelete
 	modeNotice
+)
+
+type connectionHealth int
+
+const (
+	healthHealthy connectionHealth = iota
+	healthUnstable
+	healthReconnecting
+	healthDisconnected
 )
 
 type tickMsg time.Time
@@ -46,6 +56,12 @@ type trackErrorMsg struct {
 
 type playerErrorMsg struct {
 	err error
+}
+
+type playerStartedMsg struct{}
+
+type playerEventMsg struct {
+	event player.Event
 }
 
 type stationAddedMsg struct {
@@ -74,7 +90,9 @@ type Model struct {
 	loading    bool
 	lastError  string
 	elapsed    time.Duration
-	playing    bool
+	playing     bool
+	health      connectionHealth
+	healthSince time.Time
 	volume     int
 	muted      bool
 	visualizer [visualizerBars]int
@@ -119,12 +137,14 @@ func NewModel(p provider.Provider, pl player.Player) (*Model, error) {
 		player:   pl,
 		stations: stations,
 		volume:   volume,
-		playing:  true,
-		loading:  true,
-		keys:     defaultKeys(),
-		rng:      rand.New(rand.NewSource(time.Now().UnixNano())),
-		track:    provider.Track{Title: stations[0].Name, Artist: "loading…"},
-		input:    ti,
+		playing:     true,
+		health:      healthReconnecting,
+		healthSince: time.Now(),
+		loading:     true,
+		keys:        defaultKeys(),
+		rng:         rand.New(rand.NewSource(time.Now().UnixNano())),
+		track:       provider.Track{Title: stations[0].Name, Artist: "loading…"},
+		input:       ti,
 	}
 	if configErr != nil {
 		m.lastError = fmt.Sprintf("save config: %v", configErr)
@@ -151,6 +171,8 @@ func (m *Model) loadTrack(idx int) tea.Cmd {
 	}
 	m.activeIdx = idx
 	m.loading = true
+	m.health = healthReconnecting
+	m.healthSince = time.Now()
 	m.lastError = ""
 	m.elapsed = 0
 	m.track = provider.Track{Title: m.stations[idx].Name, Artist: "loading…"}
@@ -212,7 +234,7 @@ func playCmd(pl player.Player, url string) tea.Cmd {
 		if err := pl.Play(url); err != nil {
 			return playerErrorMsg{err: err}
 		}
-		return nil
+		return playerStartedMsg{}
 	}
 }
 
@@ -234,9 +256,54 @@ func volumeCmd(pl player.Player, v int) tea.Cmd {
 	}
 }
 
+func playerEventCmd(pl player.Player) tea.Cmd {
+	return func() tea.Msg {
+		ch := pl.Events()
+		if ch == nil {
+			return nil
+		}
+		event, ok := <-ch
+		if !ok {
+			return nil
+		}
+		return playerEventMsg{event: event}
+	}
+}
+
 func (m *Model) persistVolume() {
 	if err := store.SaveConfig(store.Config{Volume: m.volume}); err != nil {
 		m.lastError = fmt.Sprintf("save config: %v", err)
+	}
+}
+
+func (m *Model) applyPlayerEvent(event player.Event) {
+	switch event.Kind {
+	case player.EventHealthy:
+		if m.playing {
+			m.health = healthHealthy
+			m.healthSince = time.Now()
+		}
+	case player.EventUnstable:
+		if m.playing {
+			m.health = healthUnstable
+			m.healthSince = time.Now()
+		}
+	case player.EventReconnecting:
+		m.health = healthReconnecting
+		m.healthSince = time.Now()
+	case player.EventDisconnected:
+		if m.loading {
+			m.health = healthReconnecting
+			return
+		}
+		m.health = healthDisconnected
+		m.healthSince = time.Now()
+		if event.Detail != "" {
+			m.lastError = event.Detail
+		}
+		if event.Err != nil {
+			m.lastError = event.Err.Error()
+		}
 	}
 }
 
@@ -264,6 +331,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.elapsed = 0
 			}
 		}
+		if m.playing && !m.loading && m.health == healthReconnecting && !m.healthSince.IsZero() && now.Sub(m.healthSince) > streamStartTimeout {
+			m.health = healthDisconnected
+			m.healthSince = now
+			m.lastError = "stream did not start; mpv never reported playback"
+		}
 		m.lastTick = now
 		m.stepVisualizer(now)
 		return m, tick()
@@ -275,6 +347,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.track = msg.track
 		m.loading = false
 		m.playing = true
+		m.health = healthReconnecting
+		m.healthSince = time.Now()
 		m.elapsed = 0
 		return m, playCmd(m.player, msg.track.StreamURL)
 
@@ -283,15 +357,28 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.loading = false
+		m.health = healthDisconnected
+		m.healthSince = time.Now()
 		m.lastError = msg.err.Error()
 		return m, nil
 
 	case playerErrorMsg:
 		if msg.err != nil {
+			m.health = healthDisconnected
+			m.healthSince = time.Now()
 			m.lastError = msg.err.Error()
 			m.playing = false
 		}
 		return m, nil
+
+	case playerStartedMsg:
+		m.health = healthReconnecting
+		m.healthSince = time.Now()
+		return m, playerEventCmd(m.player)
+
+	case playerEventMsg:
+		m.applyPlayerEvent(msg.event)
+		return m, playerEventCmd(m.player)
 
 	case stationAddedMsg:
 		m.adding = false

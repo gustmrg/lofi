@@ -46,7 +46,11 @@ var (
 	styleLogoSub = lipgloss.NewStyle().
 			Foreground(pal.TextFaint)
 
-	styleStatusBadge = lipgloss.NewStyle().Foreground(pal.Green)
+	styleStatusHealthy       = lipgloss.NewStyle().Foreground(pal.Green)
+	styleStatusUnstable      = lipgloss.NewStyle().Foreground(pal.Accent)
+	styleStatusReconnecting  = lipgloss.NewStyle().Foreground(pal.Blue)
+	styleStatusDisconnected = lipgloss.NewStyle().Foreground(pal.Red).Bold(true)
+	styleStatusPaused        = lipgloss.NewStyle().Foreground(pal.TextDim)
 
 	styleSection = lipgloss.NewStyle().
 			Foreground(pal.TextFaint).

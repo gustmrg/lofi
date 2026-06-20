@@ -50,6 +50,11 @@ func New() (*Provider, error) {
 	}
 
 	p.stations = fromSaved(saved)
+	if refreshDefaultStationRefs(p.stations) {
+		if err := store.Save(toSaved(p.stations)); err != nil {
+			fmt.Fprintf(os.Stderr, "lofi: update stations.json: %v\n", err)
+		}
+	}
 	return p, nil
 }
 
@@ -274,6 +279,25 @@ func fromSaved(saved []store.Saved) []provider.Station {
 	return out
 }
 
+func refreshDefaultStationRefs(stations []provider.Station) bool {
+	changed := false
+	for i := range stations {
+		switch stations[i].ID {
+		case "lofi-girl-beats":
+			if stations[i].SourceRef == "jfKfPfyJRdk" {
+				stations[i].SourceRef = "X4VbdwhkE10"
+				changed = true
+			}
+		case "lofi-girl-sleep":
+			if stations[i].SourceRef == "rUxyKA_-grg" {
+				stations[i].SourceRef = "JD-kMIpDfnY"
+				changed = true
+			}
+		}
+	}
+	return changed
+}
+
 func defaultStations() []provider.Station {
 	return []provider.Station{
 		{
@@ -283,7 +307,7 @@ func defaultStations() []provider.Station {
 			Listeners:   0,
 			Bitrate:     "128k",
 			Source:      id,
-			SourceRef:   "jfKfPfyJRdk",
+			SourceRef:   "X4VbdwhkE10",
 		},
 		{
 			ID:          "lofi-girl-sleep",
@@ -292,7 +316,7 @@ func defaultStations() []provider.Station {
 			Listeners:   0,
 			Bitrate:     "128k",
 			Source:      id,
-			SourceRef:   "rUxyKA_-grg",
+			SourceRef:   "JD-kMIpDfnY",
 		},
 		{
 			ID:          "chillhop-radio",

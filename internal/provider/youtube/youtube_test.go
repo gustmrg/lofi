@@ -5,6 +5,8 @@ import (
 	"os/exec"
 	"testing"
 	"time"
+
+	"github.com/gustmrg/lofi/internal/provider"
 )
 
 func TestNew_RequiresYtDlp(t *testing.T) {
@@ -25,6 +27,26 @@ func TestNew_RequiresYtDlp(t *testing.T) {
 	}
 	if len(stations) == 0 {
 		t.Fatal("expected at least one default station")
+	}
+}
+
+func TestRefreshDefaultStationRefs(t *testing.T) {
+	stations := []provider.Station{
+		{ID: "lofi-girl-beats", SourceRef: "jfKfPfyJRdk"},
+		{ID: "lofi-girl-sleep", SourceRef: "rUxyKA_-grg"},
+		{ID: "custom", SourceRef: "jfKfPfyJRdk"},
+	}
+	if !refreshDefaultStationRefs(stations) {
+		t.Fatal("expected default station refs to be updated")
+	}
+	if stations[0].SourceRef != "X4VbdwhkE10" {
+		t.Fatalf("beats SourceRef = %q, want X4VbdwhkE10", stations[0].SourceRef)
+	}
+	if stations[1].SourceRef != "JD-kMIpDfnY" {
+		t.Fatalf("sleep SourceRef = %q, want JD-kMIpDfnY", stations[1].SourceRef)
+	}
+	if stations[2].SourceRef != "jfKfPfyJRdk" {
+		t.Fatalf("custom SourceRef = %q, want unchanged", stations[2].SourceRef)
 	}
 }
 

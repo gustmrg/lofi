@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -133,6 +134,95 @@ func TestVolumeChangePersists(t *testing.T) {
 	}
 	if cfg.Volume != defaultVolume+5 {
 		t.Fatalf("saved volume = %d, want %d", cfg.Volume, defaultVolume+5)
+	}
+}
+
+func TestPlayerEventsUpdateConnectionHealth(t *testing.T) {
+	m := newTestModel(t)
+	m.loading = false
+
+	updated, _ := m.Update(playerEventMsg{event: player.Event{Kind: player.EventHealthy}})
+	m = updated.(*Model)
+	if m.health != healthHealthy {
+		t.Fatalf("healthy event health = %v, want %v", m.health, healthHealthy)
+	}
+
+	updated, _ = m.Update(playerEventMsg{event: player.Event{Kind: player.EventUnstable, Detail: "buffering"}})
+	m = updated.(*Model)
+	if m.health != healthUnstable {
+		t.Fatalf("unstable event health = %v, want %v", m.health, healthUnstable)
+	}
+
+	updated, _ = m.Update(playerEventMsg{event: player.Event{Kind: player.EventReconnecting}})
+	m = updated.(*Model)
+	if m.health != healthReconnecting {
+		t.Fatalf("reconnecting event health = %v, want %v", m.health, healthReconnecting)
+	}
+
+	updated, _ = m.Update(playerEventMsg{event: player.Event{Kind: player.EventDisconnected, Detail: "stream ended"}})
+	m = updated.(*Model)
+	if m.health != healthDisconnected {
+		t.Fatalf("disconnected event health = %v, want %v", m.health, healthDisconnected)
+	}
+	if m.lastError != "stream ended" {
+		t.Fatalf("lastError = %q, want stream ended", m.lastError)
+	}
+}
+
+func TestPlayerStartedKeepsConnecting(t *testing.T) {
+	m := newTestModel(t)
+	m.health = healthReconnecting
+	updated, _ := m.Update(playerStartedMsg{})
+	m = updated.(*Model)
+	if m.health != healthReconnecting {
+		t.Fatalf("health = %v, want %v", m.health, healthReconnecting)
+	}
+}
+
+func TestConnectingTimesOutWhenPlaybackNeverStarts(t *testing.T) {
+	m := newTestModel(t)
+	m.loading = false
+	m.playing = true
+	m.health = healthReconnecting
+	now := time.Now()
+	m.healthSince = now.Add(-streamStartTimeout - time.Second)
+	updated, _ := m.Update(tickMsg(now))
+	m = updated.(*Model)
+	if m.health != healthDisconnected {
+		t.Fatalf("health = %v, want %v", m.health, healthDisconnected)
+	}
+	if m.lastError != "stream did not start; mpv never reported playback" {
+		t.Fatalf("lastError = %q, want stream timeout", m.lastError)
+	}
+}
+
+func TestDisconnectedPlayerEventDuringLoadKeepsReconnecting(t *testing.T) {
+	m := newTestModel(t)
+	m.loading = true
+	m.health = healthReconnecting
+	updated, _ := m.Update(playerEventMsg{event: player.Event{Kind: player.EventDisconnected, Detail: "stop"}})
+	m = updated.(*Model)
+	if m.health != healthReconnecting {
+		t.Fatalf("health = %v, want %v", m.health, healthReconnecting)
+	}
+	if m.lastError != "" {
+		t.Fatalf("lastError = %q, want empty", m.lastError)
+	}
+}
+
+func TestStatusBadgeTextSameLength(t *testing.T) {
+	badges := []string{
+		statusBadgeText("ok healthy"),
+		statusBadgeText("~ unstable"),
+		statusBadgeText("... connecting"),
+		statusBadgeText("! disconnected"),
+		statusBadgeText("- paused"),
+	}
+	want := len(badges[0])
+	for _, badge := range badges[1:] {
+		if len(badge) != want {
+			t.Fatalf("badge %q length = %d, want %d", badge, len(badge), want)
+		}
 	}
 }
 

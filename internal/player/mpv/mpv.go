@@ -12,6 +12,8 @@ import (
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/gustmrg/lofi/internal/player"
 )
 
 type Player struct {
@@ -20,6 +22,9 @@ type Player struct {
 
 	mu   sync.Mutex
 	conn net.Conn
+	eventConn net.Conn
+
+	events chan player.Event
 }
 
 func New() (*Player, error) {
@@ -53,9 +58,21 @@ func New() (*Player, error) {
 		return nil, fmt.Errorf("connect mpv ipc: %w", err)
 	}
 
-	go drain(conn)
+	eventConn, err := dialWithRetry(sock, 2*time.Second)
+	if err != nil {
+		_ = conn.Close()
+		_ = cmd.Process.Kill()
+		_, _ = cmd.Process.Wait()
+		_ = os.Remove(sock)
+		return nil, fmt.Errorf("connect mpv event ipc: %w", err)
+	}
 
-	return &Player{cmd: cmd, sock: sock, conn: conn}, nil
+	p := &Player{cmd: cmd, sock: sock, conn: conn, eventConn: eventConn, events: make(chan player.Event, 16)}
+	go drain(conn)
+	go p.readEvents(eventConn)
+	_ = writeCommand(eventConn, []any{"observe_property", 1, "paused-for-cache"})
+
+	return p, nil
 }
 
 func dialWithRetry(sock string, total time.Duration) (net.Conn, error) {
@@ -84,19 +101,78 @@ func drain(r io.Reader) {
 	}
 }
 
-func (p *Player) send(cmd []any) error {
-	payload, err := json.Marshal(map[string]any{"command": cmd})
-	if err != nil {
-		return err
+func (p *Player) readEvents(r io.Reader) {
+	scanner := bufio.NewScanner(r)
+	buf := make([]byte, 0, 64*1024)
+	scanner.Buffer(buf, 1024*1024)
+	for scanner.Scan() {
+		p.handleEventLine(scanner.Bytes())
 	}
-	payload = append(payload, '\n')
+	p.emit(player.Event{Kind: player.EventDisconnected, Detail: "mpv IPC closed"})
+}
 
+func (p *Player) handleEventLine(line []byte) {
+	var msg struct {
+		Event  string          `json:"event"`
+		Name   string          `json:"name"`
+		Data   json.RawMessage `json:"data"`
+		Reason string          `json:"reason"`
+		Error  string          `json:"error"`
+	}
+	if err := json.Unmarshal(line, &msg); err != nil || msg.Event == "" {
+		return
+	}
+
+	switch msg.Event {
+	case "file-loaded", "playback-restart":
+		p.emit(player.Event{Kind: player.EventHealthy})
+	case "start-file":
+		p.emit(player.Event{Kind: player.EventReconnecting, Detail: "loading stream"})
+	case "end-file":
+		detail := msg.Reason
+		if detail == "" {
+			detail = "stream ended"
+		}
+		p.emit(player.Event{Kind: player.EventDisconnected, Detail: detail})
+	case "property-change":
+		if msg.Name != "paused-for-cache" {
+			return
+		}
+		var paused bool
+		if err := json.Unmarshal(msg.Data, &paused); err != nil {
+			return
+		}
+		if paused {
+			p.emit(player.Event{Kind: player.EventUnstable, Detail: "buffering"})
+		} else {
+			p.emit(player.Event{Kind: player.EventHealthy})
+		}
+	}
+}
+
+func (p *Player) emit(ev player.Event) {
+	select {
+	case p.events <- ev:
+	default:
+	}
+}
+
+func (p *Player) send(cmd []any) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.conn == nil {
 		return errors.New("mpv connection closed")
 	}
-	_, err = p.conn.Write(payload)
+	return writeCommand(p.conn, cmd)
+}
+
+func writeCommand(conn net.Conn, cmd []any) error {
+	payload, err := json.Marshal(map[string]any{"command": cmd})
+	if err != nil {
+		return err
+	}
+	payload = append(payload, '\n')
+	_, err = conn.Write(payload)
 	return err
 }
 
@@ -122,6 +198,10 @@ func (p *Player) Stop() error {
 	return p.send([]any{"stop"})
 }
 
+func (p *Player) Events() <-chan player.Event {
+	return p.events
+}
+
 func (p *Player) Close() error {
 	_ = p.send([]any{"quit"})
 
@@ -129,6 +209,10 @@ func (p *Player) Close() error {
 	if p.conn != nil {
 		_ = p.conn.Close()
 		p.conn = nil
+	}
+	if p.eventConn != nil {
+		_ = p.eventConn.Close()
+		p.eventConn = nil
 	}
 	p.mu.Unlock()
 
