@@ -105,8 +105,7 @@ var (
 
 	styleStationDesc = lipgloss.NewStyle().Foreground(pal.TextFaint)
 
-	styleStationMetaListeners = lipgloss.NewStyle().Foreground(pal.TextDim)
-	styleStationMetaBitrate   = lipgloss.NewStyle().Foreground(pal.TextFaint)
+	styleMetaValue = lipgloss.NewStyle().Foreground(pal.TextDim)
 
 	styleAccentBar = lipgloss.NewStyle().Foreground(pal.Accent)
 

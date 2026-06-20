@@ -130,11 +130,10 @@ func (m *Model) renderBackground() string {
 	stationList := components.Stations(contentWidth, m.stations, m.activeIdx,
 		styleSection, styleSectionRule,
 		styleStationActive, styleStationIdle, styleStationDesc,
-		styleStationMetaListeners, styleStationMetaBitrate,
 		pal.Accent, pal.TextFaint)
 
 	vol := components.Volume(contentWidth, m.volume, m.muted,
-		styleFooterLabel, styleVolFill, styleVolBg, styleMuted, styleStationMetaListeners)
+		styleFooterLabel, styleVolFill, styleVolBg, styleMuted, styleMetaValue)
 
 	footer := components.Footer(contentWidth, styleFooterKey, styleFooterLabel)
 

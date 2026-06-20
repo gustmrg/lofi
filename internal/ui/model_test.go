@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -633,5 +634,23 @@ func TestVisualizerFlatBeforeStreamStart(t *testing.T) {
 		if h != 0 {
 			t.Fatalf("visualizer[%d] = %d, want 0 before stream start", i, h)
 		}
+	}
+}
+
+func TestStationsRendersNameWithoutMeta(t *testing.T) {
+	m := newTestModel(t)
+	m.width = 80
+	m.height = 24
+	view := m.View().Content
+
+	active := m.stations[m.activeIdx]
+	if !strings.Contains(view, active.Name) {
+		t.Fatalf("view missing active station name %q", active.Name)
+	}
+	if strings.Contains(view, "listeners") {
+		t.Fatal("view should not contain listeners meta")
+	}
+	if strings.Contains(view, "128k") || strings.Contains(view, "256k") || strings.Contains(view, "320k") || strings.Contains(view, "192k") {
+		t.Fatal("view should not contain bitrate meta")
 	}
 }

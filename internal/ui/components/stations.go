@@ -14,7 +14,7 @@ func Stations(
 	width int,
 	stations []provider.Station,
 	activeIdx int,
-	section, sectionRule, active, idle, desc, metaListeners, metaBitrate lipgloss.Style,
+	section, sectionRule, active, idle, desc lipgloss.Style,
 	accent, faint color.Color,
 ) string {
 	header := sectionHeader(width, section, sectionRule, "STATIONS", fmt.Sprintf("%d available", len(stations)))
@@ -22,7 +22,7 @@ func Stations(
 	rows = append(rows, header)
 
 	for i, s := range stations {
-		rows = append(rows, stationRow(width, i+1, i == activeIdx, s, active, idle, desc, metaListeners, metaBitrate, accent, faint))
+		rows = append(rows, stationRow(width, i+1, i == activeIdx, s, active, idle, desc, accent, faint))
 	}
 	return strings.Join(rows, "\n")
 }
@@ -44,7 +44,7 @@ func stationRow(
 	num int,
 	isActive bool,
 	s provider.Station,
-	active, idle, desc, metaListeners, metaBitrate lipgloss.Style,
+	active, idle, desc lipgloss.Style,
 	accent, faint color.Color,
 ) string {
 	indicator := lipgloss.NewStyle().Foreground(faint).Render("[ ]")
@@ -56,32 +56,15 @@ func stationRow(
 
 	prefix := fmt.Sprintf("%s %d. ", indicator, num)
 	name := nameStyle.Render(s.Name)
-	description := desc.Render("  " + s.Description)
+	description := desc.Render(s.Description)
 
-	listeners := metaListeners.Render(fmt.Sprintf("%d listeners", s.Listeners))
-	bitrate := metaBitrate.Render(s.Bitrate)
-	meta := listeners + "  " + bitrate
-
-	leftBlock := prefix + name + "\n" + repeat(" ", lipgloss.Width(prefix)) + description
-
-	leftW := maxLineWidth(leftBlock)
-	metaW := lipgloss.Width(meta)
-	gap := width - leftW - metaW
-	if gap < 1 {
-		gap = 1
+	first := prefix + name
+	if w := lipgloss.Width(first); w < width {
+		first += repeat(" ", width-w)
 	}
-
-	lines := strings.Split(leftBlock, "\n")
-	lines[0] = lines[0] + repeat(" ", width-lipgloss.Width(lines[0])-metaW) + meta
-	return strings.Join(lines, "\n")
-}
-
-func maxLineWidth(s string) int {
-	max := 0
-	for _, ln := range strings.Split(s, "\n") {
-		if w := lipgloss.Width(ln); w > max {
-			max = w
-		}
+	second := repeat(" ", lipgloss.Width(prefix)) + description
+	if w := lipgloss.Width(second); w < width {
+		second += repeat(" ", width-w)
 	}
-	return max
+	return first + "\n" + second
 }
