@@ -26,6 +26,8 @@ type uiMode int
 const (
 	modeNormal uiMode = iota
 	modeAddStation
+	modeConfirmDelete
+	modeNotice
 )
 
 type tickMsg time.Time
@@ -84,6 +86,11 @@ type Model struct {
 	input    textinput.Model
 	adding   bool
 	addError string
+
+	removing    bool
+	removeError string
+	noticeTitle string
+	noticeText  string
 }
 
 func NewModel(p provider.Provider, pl player.Player) (*Model, error) {
@@ -280,6 +287,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case stationRemovedMsg:
+		m.removing = false
+		m.removeError = ""
+		m.mode = modeNormal
 		stations, err := m.prov.Stations(context.Background())
 		if err == nil {
 			m.stations = stations
@@ -294,12 +304,19 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.loadTrack(newIdx)
 
 	case removeErrorMsg:
-		m.lastError = msg.err.Error()
+		m.removing = false
+		m.removeError = msg.err.Error()
 		return m, nil
 
 	case tea.KeyPressMsg:
 		if m.mode == modeAddStation {
 			return m.handleAddKey(msg)
+		}
+		if m.mode == modeConfirmDelete {
+			return m.handleDeleteConfirmKey(msg)
+		}
+		if m.mode == modeNotice {
+			return m.handleNoticeKey(msg)
 		}
 		return m.handleKey(msg)
 
@@ -349,6 +366,33 @@ func (m *Model) handleAddKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m.updateAddInput(msg)
 }
 
+func (m *Model) handleDeleteConfirmKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	switch {
+	case key.Matches(msg, m.keys.Cancel):
+		m.mode = modeNormal
+		m.removing = false
+		m.removeError = ""
+		return m, nil
+	case key.Matches(msg, m.keys.Confirm):
+		if m.removing || m.manager == nil || len(m.stations) <= 1 {
+			return m, nil
+		}
+		m.removing = true
+		m.removeError = ""
+		return m, removeStationCmd(m.manager, m.stations[m.activeIdx].ID, m.activeIdx)
+	}
+	return m, nil
+}
+
+func (m *Model) handleNoticeKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	if key.Matches(msg, m.keys.Cancel) || key.Matches(msg, m.keys.Confirm) {
+		m.mode = modeNormal
+		m.noticeTitle = ""
+		m.noticeText = ""
+	}
+	return m, nil
+}
+
 func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.Quit):
@@ -392,10 +436,18 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.input.Reset()
 		return m, m.input.Focus()
 	case key.Matches(msg, m.keys.Delete):
-		if m.manager == nil || len(m.stations) <= 1 {
+		if m.manager == nil {
 			return m, nil
 		}
-		return m, removeStationCmd(m.manager, m.stations[m.activeIdx].ID, m.activeIdx)
+		if len(m.stations) <= 1 {
+			m.mode = modeNotice
+			m.noticeTitle = "CANNOT DELETE"
+			m.noticeText = "At least one station must exist."
+			return m, nil
+		}
+		m.mode = modeConfirmDelete
+		m.removeError = ""
+		return m, nil
 	default:
 		for i, b := range m.keys.Stations {
 			if i >= len(m.stations) {

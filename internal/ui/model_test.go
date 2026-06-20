@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -11,14 +12,20 @@ import (
 	"github.com/gustmrg/lofi/internal/provider/mock"
 )
 
-type fakeStationManager struct{}
+type fakeStationManager struct {
+	removeErr   error
+	removeCalls int
+	removedID   string
+}
 
-func (fakeStationManager) AddByURL(context.Context, string) (provider.Station, error) {
+func (*fakeStationManager) AddByURL(context.Context, string) (provider.Station, error) {
 	return provider.Station{}, nil
 }
 
-func (fakeStationManager) Remove(context.Context, string) error {
-	return nil
+func (f *fakeStationManager) Remove(_ context.Context, id string) error {
+	f.removeCalls++
+	f.removedID = id
+	return f.removeErr
 }
 
 func newTestModel(t *testing.T) *Model {
@@ -46,10 +53,20 @@ func sendSpecial(t *testing.T, m *Model, code rune) *Model {
 
 func enterAddMode(t *testing.T, m *Model) *Model {
 	t.Helper()
-	m.manager = fakeStationManager{}
+	m.manager = &fakeStationManager{}
 	m = sendString(t, m, "a")
 	if m.mode != modeAddStation {
 		t.Fatal("expected add station mode")
+	}
+	return m
+}
+
+func enterDeleteConfirmMode(t *testing.T, m *Model, fm *fakeStationManager) *Model {
+	t.Helper()
+	m.manager = fm
+	m = sendString(t, m, "d")
+	if m.mode != modeConfirmDelete {
+		t.Fatal("expected delete confirmation mode")
 	}
 	return m
 }
@@ -165,5 +182,101 @@ func TestAddStationCancelResetsInput(t *testing.T) {
 	}
 	if got := m.input.Value(); got != "" {
 		t.Fatalf("input value after cancel = %q, want empty", got)
+	}
+}
+
+func TestDeleteKeyOpensConfirmation(t *testing.T) {
+	m := newTestModel(t)
+	fm := &fakeStationManager{}
+	m = enterDeleteConfirmMode(t, m, fm)
+	if fm.removeCalls != 0 {
+		t.Fatalf("remove calls = %d, want 0 before confirmation", fm.removeCalls)
+	}
+}
+
+func TestDeleteConfirmationCancelDoesNotRemove(t *testing.T) {
+	m := newTestModel(t)
+	fm := &fakeStationManager{}
+	m = enterDeleteConfirmMode(t, m, fm)
+	m = sendSpecial(t, m, tea.KeyEsc)
+	if m.mode != modeNormal {
+		t.Fatal("expected normal mode after cancel")
+	}
+	if fm.removeCalls != 0 {
+		t.Fatalf("remove calls = %d, want 0", fm.removeCalls)
+	}
+}
+
+func TestDeleteConfirmationEnterRemovesActiveStation(t *testing.T) {
+	m := newTestModel(t)
+	fm := &fakeStationManager{}
+	m = enterDeleteConfirmMode(t, m, fm)
+	wantID := m.stations[m.activeIdx].ID
+	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("expected remove command")
+	}
+	msg := cmd()
+	if _, ok := msg.(stationRemovedMsg); !ok {
+		t.Fatalf("remove command returned %T, want stationRemovedMsg", msg)
+	}
+	if fm.removeCalls != 1 {
+		t.Fatalf("remove calls = %d, want 1", fm.removeCalls)
+	}
+	if fm.removedID != wantID {
+		t.Fatalf("removed id = %q, want %q", fm.removedID, wantID)
+	}
+}
+
+func TestDeleteDisabledWithSingleStation(t *testing.T) {
+	m := newTestModel(t)
+	fm := &fakeStationManager{}
+	m.manager = fm
+	m.stations = m.stations[:1]
+	m = sendString(t, m, "d")
+	if m.mode != modeNotice {
+		t.Fatal("expected delete notice with one station")
+	}
+	if m.noticeTitle != "CANNOT DELETE" {
+		t.Fatalf("notice title = %q, want CANNOT DELETE", m.noticeTitle)
+	}
+	if m.noticeText != "At least one station must exist." {
+		t.Fatalf("notice text = %q, want last-station message", m.noticeText)
+	}
+	if fm.removeCalls != 0 {
+		t.Fatalf("remove calls = %d, want 0", fm.removeCalls)
+	}
+}
+
+func TestDeleteNoticeCanBeClosed(t *testing.T) {
+	m := newTestModel(t)
+	m.manager = &fakeStationManager{}
+	m.stations = m.stations[:1]
+	m = sendString(t, m, "d")
+	m = sendSpecial(t, m, tea.KeyEsc)
+	if m.mode != modeNormal {
+		t.Fatal("expected normal mode after closing notice")
+	}
+	if m.noticeTitle != "" || m.noticeText != "" {
+		t.Fatalf("notice state not cleared: title=%q text=%q", m.noticeTitle, m.noticeText)
+	}
+}
+
+func TestDeleteErrorKeepsConfirmationOpen(t *testing.T) {
+	m := newTestModel(t)
+	fm := &fakeStationManager{removeErr: errors.New("remove failed")}
+	m = enterDeleteConfirmMode(t, m, fm)
+	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m = updated.(*Model)
+	if cmd == nil {
+		t.Fatal("expected remove command")
+	}
+	updated, _ = m.Update(cmd())
+	m = updated.(*Model)
+	if m.mode != modeConfirmDelete {
+		t.Fatal("expected confirmation mode after remove error")
+	}
+	if m.removeError != "remove failed" {
+		t.Fatalf("remove error = %q, want remove failed", m.removeError)
 	}
 }

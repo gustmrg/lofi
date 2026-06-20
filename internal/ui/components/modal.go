@@ -37,3 +37,39 @@ func AddStationModal(a AddStationModalArgs) string {
 
 	return a.BoxStyle.Render(body)
 }
+
+type ConfirmModalArgs struct {
+	Title   string
+	Message string
+	Hint    string
+
+	Loading bool
+	Error   string
+
+	BoxStyle     lipgloss.Style
+	TitleStyle   lipgloss.Style
+	MessageStyle lipgloss.Style
+	HintStyle    lipgloss.Style
+	StatusStyle  lipgloss.Style
+	ErrorStyle   lipgloss.Style
+}
+
+func ConfirmModal(a ConfirmModalArgs) string {
+	status := a.HintStyle.Render(a.Hint)
+	if a.Loading {
+		status = a.StatusStyle.Render("deleting…")
+	}
+	if a.Error != "" {
+		status = a.ErrorStyle.Render("! " + a.Error)
+	}
+
+	body := lipgloss.JoinVertical(lipgloss.Left,
+		a.TitleStyle.Render(a.Title),
+		"",
+		a.MessageStyle.Render(a.Message),
+		"",
+		status,
+	)
+
+	return a.BoxStyle.Render(body)
+}

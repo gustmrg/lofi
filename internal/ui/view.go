@@ -3,8 +3,8 @@ package ui
 import (
 	"strings"
 
-	"charm.land/lipgloss/v2"
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/gustmrg/lofi/internal/ui/components"
 )
@@ -18,18 +18,52 @@ func (m *Model) View() tea.View {
 	bg := m.renderBackground()
 
 	var v tea.View
-	if m.mode == modeAddStation {
-		modal := components.AddStationModal(components.AddStationModalArgs{
-			Title:       "ADD STATION",
-			Input:       m.input.View(),
-			Loading:     m.adding,
-			Error:       m.addError,
-			BoxStyle:    styleModalBox,
-			TitleStyle:  styleModalTitle,
-			HintStyle:   styleModalHint,
-			StatusStyle: styleModalStatus,
-			ErrorStyle:  styleError,
-		})
+	if m.mode == modeAddStation || m.mode == modeConfirmDelete || m.mode == modeNotice {
+		var modal string
+
+		if m.mode == modeAddStation {
+			modal = components.AddStationModal(components.AddStationModalArgs{
+				Title:       "ADD STATION",
+				Input:       m.input.View(),
+				Loading:     m.adding,
+				Error:       m.addError,
+				BoxStyle:    styleModalBox,
+				TitleStyle:  styleModalTitle,
+				HintStyle:   styleModalHint,
+				StatusStyle: styleModalStatus,
+				ErrorStyle:  styleError,
+			})
+		} else if m.mode == modeConfirmDelete {
+			name := ""
+			if m.activeIdx >= 0 && m.activeIdx < len(m.stations) {
+				name = m.stations[m.activeIdx].Name
+			}
+			modal = components.ConfirmModal(components.ConfirmModalArgs{
+				Title:        "DELETE STATION",
+				Message:      "Delete " + name + "?",
+				Hint:         "enter to delete  ·  esc to cancel",
+				Loading:      m.removing,
+				Error:        m.removeError,
+				BoxStyle:     styleModalBox,
+				TitleStyle:   styleModalTitle,
+				MessageStyle: styleStationActive,
+				HintStyle:    styleModalHint,
+				StatusStyle:  styleModalStatus,
+				ErrorStyle:   styleError,
+			})
+		} else {
+			modal = components.ConfirmModal(components.ConfirmModalArgs{
+				Title:        m.noticeTitle,
+				Message:      m.noticeText,
+				Hint:         "esc to close",
+				BoxStyle:     styleModalBox,
+				TitleStyle:   styleModalTitle,
+				MessageStyle: styleStationActive,
+				HintStyle:    styleModalHint,
+				StatusStyle:  styleModalStatus,
+				ErrorStyle:   styleError,
+			})
+		}
 		modalW := lipgloss.Width(modal)
 		modalH := lipgloss.Height(modal)
 		x := (m.width - modalW) / 2
