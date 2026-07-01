@@ -2,12 +2,55 @@ package youtube
 
 import (
 	"context"
+	"errors"
 	"os/exec"
 	"testing"
 	"time"
 
 	"github.com/gustmrg/lofi/internal/provider"
 )
+
+func TestClassifyYtDlpError(t *testing.T) {
+	tests := []struct {
+		name   string
+		ctxErr error
+		err    error
+		stderr string
+		want   provider.ErrorCategory
+	}{
+		{
+			name:   "context deadline",
+			ctxErr: context.DeadlineExceeded,
+			err:    errors.New("signal: killed"),
+			want:   provider.ErrTimeout,
+		},
+		{
+			name:   "dns failure",
+			err:    errors.New("exit status 1"),
+			stderr: "Temporary failure in name resolution",
+			want:   provider.ErrNetwork,
+		},
+		{
+			name:   "bad output extraction",
+			err:    errors.New("exit status 1"),
+			stderr: "Unable to extract uploader id",
+			want:   provider.ErrDecode,
+		},
+		{
+			name: "unknown",
+			err:  errors.New("exit status 1"),
+			want: provider.ErrUnknown,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := classifyYtDlpError(tt.ctxErr, tt.err, tt.stderr); got != tt.want {
+				t.Fatalf("classifyYtDlpError() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
 
 func TestNew_RequiresYtDlp(t *testing.T) {
 	if _, err := exec.LookPath("yt-dlp"); err != nil {

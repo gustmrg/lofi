@@ -6,13 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"os"
 	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	appLog "github.com/gustmrg/lofi/internal/log"
 	"github.com/gustmrg/lofi/internal/provider"
 	"github.com/gustmrg/lofi/internal/store"
 )
@@ -27,16 +27,18 @@ type Provider struct {
 }
 
 func New() (*Provider, error) {
+	logger := appLog.For("yt-dlp")
 	bin, err := exec.LookPath("yt-dlp")
 	if err != nil {
 		return nil, fmt.Errorf("yt-dlp not found in PATH: %w", err)
 	}
+	logger.Debug("found binary", "op", "look_path", "path", bin)
 
 	p := &Provider{binary: bin}
 
 	saved, err := store.Load()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "lofi: stations.json unreadable, falling back to defaults: %v\n", err)
+		logger.Warn("stations unreadable, falling back to defaults", "op", "load_stations", "err", err)
 		p.stations = defaultStations()
 		return p, nil
 	}
@@ -44,7 +46,7 @@ func New() (*Provider, error) {
 	if saved == nil {
 		p.stations = defaultStations()
 		if err := store.Save(toSaved(p.stations)); err != nil {
-			fmt.Fprintf(os.Stderr, "lofi: seed stations.json: %v\n", err)
+			logger.Error("seed stations failed", "op", "seed_stations", "err", err)
 		}
 		return p, nil
 	}
@@ -52,7 +54,7 @@ func New() (*Provider, error) {
 	p.stations = fromSaved(saved)
 	if refreshDefaultStationRefs(p.stations) {
 		if err := store.Save(toSaved(p.stations)); err != nil {
-			fmt.Fprintf(os.Stderr, "lofi: update stations.json: %v\n", err)
+			logger.Error("update stations failed", "op", "update_stations", "err", err)
 		}
 	}
 	return p, nil
@@ -75,6 +77,7 @@ type meta struct {
 }
 
 func (p *Provider) runYtDlp(ctx context.Context, link string, withStreamURL bool) (meta, error) {
+	logger := appLog.For("yt-dlp")
 	args := []string{
 		"--no-playlist",
 		"--skip-download",
@@ -87,13 +90,24 @@ func (p *Provider) runYtDlp(ctx context.Context, link string, withStreamURL bool
 		args = append(args, "--print", "%(urls)s")
 	}
 	args = append(args, link)
+	logger.Info("resolving", "op", "run_yt_dlp", "url", link, "with_stream_url", withStreamURL)
 
 	cmd := exec.CommandContext(ctx, p.binary, args...)
 	var out, errBuf bytes.Buffer
 	cmd.Stdout = &out
 	cmd.Stderr = &errBuf
 	if err := cmd.Run(); err != nil {
-		return meta{}, fmt.Errorf("yt-dlp: %w: %s", err, strings.TrimSpace(errBuf.String()))
+		stderr := strings.TrimSpace(errBuf.String())
+		category := classifyYtDlpError(ctx.Err(), err, stderr)
+		attrs := []any{"op", "run_yt_dlp", "url", link, "with_stream_url", withStreamURL, "category", category.String(), "err", err, "err_type", fmt.Sprintf("%T", err)}
+		if exitErr := new(exec.ExitError); errors.As(err, &exitErr) {
+			attrs = append(attrs, "exit_code", exitErr.ExitCode())
+		}
+		if stderr != "" {
+			attrs = append(attrs, "stderr", stderr)
+		}
+		logger.Error("yt-dlp failed", attrs...)
+		return meta{}, provider.WrapError(category, fmt.Errorf("yt-dlp: %w: %s", err, stderr))
 	}
 
 	lines := strings.Split(strings.TrimRight(out.String(), "\n"), "\n")
@@ -102,7 +116,9 @@ func (p *Provider) runYtDlp(ctx context.Context, link string, withStreamURL bool
 		want = 4
 	}
 	if len(lines) < want {
-		return meta{}, fmt.Errorf("unexpected yt-dlp output: %q", out.String())
+		err := fmt.Errorf("unexpected yt-dlp output: %q", out.String())
+		logger.Error("yt-dlp output malformed", "op", "run_yt_dlp", "url", link, "with_stream_url", withStreamURL, "category", provider.ErrDecode.String(), "err", err, "err_type", fmt.Sprintf("%T", err))
+		return meta{}, provider.WrapError(provider.ErrDecode, err)
 	}
 
 	dur, err := strconv.ParseFloat(lines[2], 64)
@@ -118,7 +134,7 @@ func (p *Provider) runYtDlp(ctx context.Context, link string, withStreamURL bool
 
 func (p *Provider) Resolve(ctx context.Context, s provider.Station) (provider.Track, error) {
 	if s.SourceRef == "" {
-		return provider.Track{}, errors.New("station has no source ref")
+		return provider.Track{}, provider.WrapError(provider.ErrUnknown, errors.New("station has no source ref"))
 	}
 
 	m, err := p.runYtDlp(ctx, normalizeURL(s.SourceRef), true)
@@ -126,7 +142,7 @@ func (p *Provider) Resolve(ctx context.Context, s provider.Station) (provider.Tr
 		return provider.Track{}, err
 	}
 	if m.streamURL == "" {
-		return provider.Track{}, errors.New("yt-dlp returned empty stream url")
+		return provider.Track{}, provider.WrapError(provider.ErrDecode, errors.New("yt-dlp returned empty stream url"))
 	}
 
 	return provider.Track{
@@ -189,6 +205,42 @@ func (p *Provider) AddByURL(ctx context.Context, raw string) (provider.Station, 
 		return provider.Station{}, fmt.Errorf("persist stations: %w", err)
 	}
 	return s, nil
+}
+
+func classifyYtDlpError(ctxErr error, err error, stderr string) provider.ErrorCategory {
+	if errors.Is(ctxErr, context.DeadlineExceeded) || errors.Is(ctxErr, context.Canceled) {
+		return provider.ErrTimeout
+	}
+
+	lower := strings.ToLower(stderr + " " + errorString(err))
+	switch {
+	case strings.Contains(lower, "timed out"), strings.Contains(lower, "timeout"):
+		return provider.ErrTimeout
+	case strings.Contains(lower, "temporary failure in name resolution"),
+		strings.Contains(lower, "name or service not known"),
+		strings.Contains(lower, "dns"),
+		strings.Contains(lower, "network is unreachable"),
+		strings.Contains(lower, "connection refused"),
+		strings.Contains(lower, "connection reset"),
+		strings.Contains(lower, "unable to download webpage"),
+		strings.Contains(lower, "failed to resolve"),
+		strings.Contains(lower, "no route to host"):
+		return provider.ErrNetwork
+	case strings.Contains(lower, "unable to extract"),
+		strings.Contains(lower, "unsupported url"),
+		strings.Contains(lower, "requested format is not available"),
+		strings.Contains(lower, "no video formats found"):
+		return provider.ErrDecode
+	default:
+		return provider.ErrUnknown
+	}
+}
+
+func errorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func (p *Provider) Remove(_ context.Context, sid string) error {
