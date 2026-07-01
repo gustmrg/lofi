@@ -11,9 +11,11 @@ import (
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
+	version "github.com/gustmrg/lofi"
 	"github.com/gustmrg/lofi/internal/player"
 	"github.com/gustmrg/lofi/internal/provider"
 	"github.com/gustmrg/lofi/internal/store"
+	"github.com/gustmrg/lofi/internal/updater"
 )
 
 const (
@@ -62,10 +64,8 @@ type playerErrorMsg struct {
 	err error
 }
 
-type playerStartedMsg struct{}
-
-type playerEventMsg struct {
-	event player.Event
+type updateNoticeMsg struct {
+	notice string
 }
 
 type stationAddedMsg struct {
@@ -85,30 +85,26 @@ type removeErrorMsg struct {
 }
 
 type Model struct {
-	prov          provider.Provider
-	manager       provider.StationManager
-	player        player.Player
-	stations      []provider.Station
-	activeIdx     int
-	track         provider.Track
-	loading       bool
-	lastError     string
-	elapsed       time.Duration
-	playing       bool
-	streamStarted bool
-	health        connectionHealth
-	healthSince   time.Time
-	volume        int
-	muted         bool
-	visualizer    [visualizerMaxBars]int
-	visCurr       [visualizerMaxBars]float64
-	visTarget     [visualizerMaxBars]float64
-	width         int
-	height        int
-	keys          keyMap
-	rng           *rand.Rand
-	lastTick      time.Time
-	beatPhase     float64
+	prov        provider.Provider
+	manager     provider.StationManager
+	player      player.Player
+	stations    []provider.Station
+	activeIdx   int
+	track       provider.Track
+	loading     bool
+	lastError   string
+	elapsed     time.Duration
+	playing     bool
+	volume      int
+	muted       bool
+	visualizer  [visualizerBars]int
+	width       int
+	height      int
+	keys        keyMap
+	rng         *rand.Rand
+	lastTick    time.Time
+	updateInfo  string
+	checkUpdate func(context.Context) (string, error)
 
 	mode     uiMode
 	input    textinput.Model
@@ -136,6 +132,7 @@ func NewModel(p provider.Provider, pl player.Player) (*Model, error) {
 	ti.Placeholder = "https://youtube.com/watch?v=..."
 	ti.CharLimit = 256
 	ti.SetWidth(56)
+	checker := updater.DefaultNoticeChecker(version.Current())
 
 	volume, configErr := loadVolume()
 
@@ -144,18 +141,14 @@ func NewModel(p provider.Provider, pl player.Player) (*Model, error) {
 		manager:     mgr,
 		player:      pl,
 		stations:    stations,
-		volume:      volume,
+		volume:      72,
 		playing:     true,
-		health:      healthReconnecting,
-		healthSince: time.Now(),
 		loading:     true,
 		keys:        defaultKeys(),
 		rng:         rand.New(rand.NewSource(time.Now().UnixNano())),
 		track:       provider.Track{Title: stations[0].Name, Artist: "loading…"},
+		checkUpdate: checker.Notice,
 		input:       ti,
-	}
-	if configErr != nil {
-		m.lastError = fmt.Sprintf("save config: %v", configErr)
 	}
 	return m, nil
 }
@@ -196,6 +189,7 @@ func (m *Model) Init() tea.Cmd {
 		tick(),
 		volumeCmd(m.player, m.volume),
 		resolveCmd(m.prov, 0, m.stations[0]),
+		updateNoticeCmd(m.checkUpdate),
 	)
 }
 
@@ -330,6 +324,21 @@ func stopCmd(pl player.Player) tea.Cmd {
 	}
 }
 
+func updateNoticeCmd(check func(context.Context) (string, error)) tea.Cmd {
+	if check == nil {
+		return nil
+	}
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		notice, err := check(ctx)
+		if err != nil || notice == "" {
+			return nil
+		}
+		return updateNoticeMsg{notice: notice}
+	}
+}
+
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
@@ -386,14 +395,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
-	case playerStartedMsg:
-		m.health = healthReconnecting
-		m.healthSince = time.Now()
-		return m, playerEventCmd(m.player)
-
-	case playerEventMsg:
-		m.applyPlayerEvent(msg.event)
-		return m, playerEventCmd(m.player)
+	case updateNoticeMsg:
+		m.updateInfo = msg.notice
+		return m, nil
 
 	case stationAddedMsg:
 		m.adding = false

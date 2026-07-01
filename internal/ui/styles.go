@@ -74,12 +74,11 @@ var (
 	styleProgressFill = lipgloss.NewStyle().Foreground(pal.Accent)
 	styleProgressBg   = lipgloss.NewStyle().Foreground(pal.Border)
 
-	styleLoading = lipgloss.NewStyle().Foreground(pal.Blue)
-
-	styleVolFill = lipgloss.NewStyle().Foreground(pal.Green)
-	styleVolBg   = lipgloss.NewStyle().Foreground(pal.Border)
-	styleMuted   = lipgloss.NewStyle().Foreground(pal.Red).Bold(true)
-	styleError   = lipgloss.NewStyle().Foreground(pal.Red)
+	styleVolFill      = lipgloss.NewStyle().Foreground(pal.Green)
+	styleVolBg        = lipgloss.NewStyle().Foreground(pal.Border)
+	styleMuted        = lipgloss.NewStyle().Foreground(pal.Red).Bold(true)
+	styleError        = lipgloss.NewStyle().Foreground(pal.Red)
+	styleUpdateNotice = lipgloss.NewStyle().Foreground(pal.Blue)
 
 	styleModalBox = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
