@@ -74,6 +74,8 @@ var (
 	styleProgressFill = lipgloss.NewStyle().Foreground(pal.Accent)
 	styleProgressBg   = lipgloss.NewStyle().Foreground(pal.Border)
 
+	styleLoading = lipgloss.NewStyle().Foreground(pal.Blue)
+
 	styleVolFill      = lipgloss.NewStyle().Foreground(pal.Green)
 	styleVolBg        = lipgloss.NewStyle().Foreground(pal.Border)
 	styleMuted        = lipgloss.NewStyle().Foreground(pal.Red).Bold(true)

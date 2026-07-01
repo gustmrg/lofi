@@ -64,6 +64,12 @@ type playerErrorMsg struct {
 	err error
 }
 
+type playerStartedMsg struct{}
+
+type playerEventMsg struct {
+	event player.Event
+}
+
 type updateNoticeMsg struct {
 	notice string
 }
@@ -85,26 +91,32 @@ type removeErrorMsg struct {
 }
 
 type Model struct {
-	prov        provider.Provider
-	manager     provider.StationManager
-	player      player.Player
-	stations    []provider.Station
-	activeIdx   int
-	track       provider.Track
-	loading     bool
-	lastError   string
-	elapsed     time.Duration
-	playing     bool
-	volume      int
-	muted       bool
-	visualizer  [visualizerBars]int
-	width       int
-	height      int
-	keys        keyMap
-	rng         *rand.Rand
-	lastTick    time.Time
-	updateInfo  string
-	checkUpdate func(context.Context) (string, error)
+	prov          provider.Provider
+	manager       provider.StationManager
+	player        player.Player
+	stations      []provider.Station
+	activeIdx     int
+	track         provider.Track
+	loading       bool
+	lastError     string
+	elapsed       time.Duration
+	playing       bool
+	volume        int
+	muted         bool
+	visualizer    [visualizerMaxBars]int
+	width         int
+	height        int
+	keys          keyMap
+	rng           *rand.Rand
+	lastTick      time.Time
+	updateInfo    string
+	checkUpdate   func(context.Context) (string, error)
+	streamStarted bool
+	health        connectionHealth
+	healthSince   time.Time
+	beatPhase     float64
+	visCurr       [visualizerMaxBars]float64
+	visTarget     [visualizerMaxBars]float64
 
 	mode     uiMode
 	input    textinput.Model
@@ -134,16 +146,18 @@ func NewModel(p provider.Provider, pl player.Player) (*Model, error) {
 	ti.SetWidth(56)
 	checker := updater.DefaultNoticeChecker(version.Current())
 
-	volume, configErr := loadVolume()
+	volume, _ := loadVolume()
 
 	m := &Model{
 		prov:        p,
 		manager:     mgr,
 		player:      pl,
 		stations:    stations,
-		volume:      72,
+		volume:      volume,
 		playing:     true,
 		loading:     true,
+		health:      healthReconnecting,
+		healthSince: time.Now(),
 		keys:        defaultKeys(),
 		rng:         rand.New(rand.NewSource(time.Now().UnixNano())),
 		track:       provider.Track{Title: stations[0].Name, Artist: "loading…"},
@@ -385,6 +399,13 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.healthSince = time.Now()
 		m.lastError = msg.err.Error()
 		return m, nil
+
+	case playerStartedMsg:
+		return m, playerEventCmd(m.player)
+
+	case playerEventMsg:
+		m.applyPlayerEvent(msg.event)
+		return m, playerEventCmd(m.player)
 
 	case playerErrorMsg:
 		if msg.err != nil {
