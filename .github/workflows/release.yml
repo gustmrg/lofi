@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Verify tag matches VERSION
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          test "${GITHUB_REF_NAME}" = "v${version}"
+
+      - name: Test
+        run: go test -short ./...
+
+      - name: Build release assets
+        run: |
+          set -euo pipefail
+          version="$(tr -d '[:space:]' < VERSION)"
+          mkdir -p dist
+          for target in darwin/amd64 darwin/arm64 linux/amd64 linux/arm64; do
+            goos="${target%/*}"
+            goarch="${target#*/}"
+            work="dist/${goos}_${goarch}"
+            mkdir -p "${work}"
+            GOOS="${goos}" GOARCH="${goarch}" go build \
+              -trimpath \
+              -ldflags "-s -w -X github.com/gustmrg/lofi.BuiltVersion=${version}" \
+              -o "${work}/lofi" ./cmd/lofi
+            tar -C "${work}" -czf "dist/lofi_v${version}_${goos}_${goarch}.tar.gz" lofi
+            rm -rf "${work}"
+          done
+          (cd dist && shasum -a 256 *.tar.gz > checksums.txt)
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/checksums.txt

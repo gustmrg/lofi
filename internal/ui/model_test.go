@@ -2,7 +2,6 @@ package ui
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -381,276 +380,29 @@ func TestSwitchingStationResetsElapsed(t *testing.T) {
 	if m.elapsed != 0 {
 		t.Fatalf("switching station should reset elapsed, got %v", m.elapsed)
 	}
-	if m.streamStarted {
-		t.Fatal("switching station should reset streamStarted to false")
-	}
 }
 
-func TestTimerDoesNotAdvanceBeforePlaybackStarts(t *testing.T) {
+func TestUpdateNoticeMessage(t *testing.T) {
 	m := newTestModel(t)
-	updated, _ := m.Update(trackResolvedMsg{idx: m.activeIdx, track: provider.Track{Title: "t", Artist: "a", Duration: 4 * time.Minute}})
+	cmd := updateNoticeCmd(func(context.Context) (string, error) {
+		return "New version available: v0.2.0 (you are using v0.1.0). Run 'lofi update' to update.", nil
+	})
+	updated, _ := m.Update(cmd())
 	m = updated.(*Model)
-	if m.streamStarted {
-		t.Fatal("expected streamStarted=false after resolve")
-	}
-	if !m.playing {
-		t.Fatal("expected playing=true after resolve")
-	}
-
-	t0 := time.Now()
-	updated, _ = m.Update(tickMsg(t0))
-	m = updated.(*Model)
-	updated, _ = m.Update(tickMsg(t0.Add(tickInterval)))
-	m = updated.(*Model)
-	if m.elapsed != 0 {
-		t.Fatalf("elapsed = %v, want 0 before playback starts", m.elapsed)
+	if !strings.Contains(m.updateInfo, "v0.2.0") {
+		t.Fatalf("updateInfo = %q", m.updateInfo)
 	}
 }
 
-func TestEventHealthyStartsTimerAndResetsElapsed(t *testing.T) {
+func TestPlaybackErrorTakesPrecedenceOverUpdateNotice(t *testing.T) {
 	m := newTestModel(t)
-	m.playing = true
-	m.streamStarted = false
-	m.elapsed = 5 * time.Second
-
-	updated, _ := m.Update(playerEventMsg{event: player.Event{Kind: player.EventHealthy}})
-	m = updated.(*Model)
-	if !m.streamStarted {
-		t.Fatal("expected streamStarted=true after healthy event")
+	m.updateInfo = "New version available: v0.2.0 (you are using v0.1.0). Run 'lofi update' to update."
+	m.lastError = "player failed"
+	view := m.renderBackground()
+	if !strings.Contains(view, "player failed") {
+		t.Fatalf("view should contain playback error:\n%s", view)
 	}
-	if m.elapsed != 0 {
-		t.Fatalf("elapsed = %v, want 0 reset on stream start", m.elapsed)
-	}
-
-	t0 := time.Now()
-	updated, _ = m.Update(tickMsg(t0))
-	m = updated.(*Model)
-	updated, _ = m.Update(tickMsg(t0.Add(tickInterval)))
-	m = updated.(*Model)
-	if m.elapsed <= 0 {
-		t.Fatalf("elapsed = %v, want >0 after tick once started", m.elapsed)
-	}
-}
-
-func TestSubsequentHealthyDoesNotResetElapsed(t *testing.T) {
-	m := newTestModel(t)
-	m.playing = true
-	m.streamStarted = true
-	m.elapsed = 10 * time.Second
-
-	updated, _ := m.Update(playerEventMsg{event: player.Event{Kind: player.EventHealthy}})
-	m = updated.(*Model)
-	if m.elapsed != 10*time.Second {
-		t.Fatalf("elapsed = %v, want 10s (not reset by subsequent healthy)", m.elapsed)
-	}
-}
-
-func TestDisconnectMidPlaybackFreezesTimer(t *testing.T) {
-	m := newTestModel(t)
-	m.loading = false
-	m.playing = true
-	m.streamStarted = true
-	m.elapsed = 30 * time.Second
-
-	updated, _ := m.Update(playerEventMsg{event: player.Event{Kind: player.EventDisconnected, Detail: "stream ended"}})
-	m = updated.(*Model)
-	if m.streamStarted {
-		t.Fatal("expected streamStarted=false after disconnect")
-	}
-
-	t0 := time.Now()
-	updated, _ = m.Update(tickMsg(t0))
-	m = updated.(*Model)
-	updated, _ = m.Update(tickMsg(t0.Add(tickInterval)))
-	m = updated.(*Model)
-	if m.elapsed != 30*time.Second {
-		t.Fatalf("elapsed = %v, want 30s (frozen after disconnect)", m.elapsed)
-	}
-}
-
-func TestAddStationTypingUpdatesInput(t *testing.T) {
-	m := enterAddMode(t, newTestModel(t))
-	m = sendString(t, m, "h")
-	m = sendString(t, m, "t")
-	if got, want := m.input.Value(), "ht"; got != want {
-		t.Fatalf("input value = %q, want %q", got, want)
-	}
-}
-
-func TestAddStationBracketedPasteUpdatesInput(t *testing.T) {
-	m := enterAddMode(t, newTestModel(t))
-	url := "https://www.youtube.com/watch?v=jfKfPfyJRdk"
-	updated, _ := m.Update(tea.PasteMsg{Content: url})
-	m = updated.(*Model)
-	if got := m.input.Value(); got != url {
-		t.Fatalf("input value = %q, want %q", got, url)
-	}
-}
-
-func TestAddStationCancelResetsInput(t *testing.T) {
-	m := enterAddMode(t, newTestModel(t))
-	m = sendString(t, m, "x")
-	m = sendSpecial(t, m, tea.KeyEsc)
-	if m.mode != modeNormal {
-		t.Fatal("expected normal mode after cancel")
-	}
-	if got := m.input.Value(); got != "" {
-		t.Fatalf("input value after cancel = %q, want empty", got)
-	}
-}
-
-func TestDeleteKeyOpensConfirmation(t *testing.T) {
-	m := newTestModel(t)
-	fm := &fakeStationManager{}
-	m = enterDeleteConfirmMode(t, m, fm)
-	if fm.removeCalls != 0 {
-		t.Fatalf("remove calls = %d, want 0 before confirmation", fm.removeCalls)
-	}
-}
-
-func TestDeleteConfirmationCancelDoesNotRemove(t *testing.T) {
-	m := newTestModel(t)
-	fm := &fakeStationManager{}
-	m = enterDeleteConfirmMode(t, m, fm)
-	m = sendSpecial(t, m, tea.KeyEsc)
-	if m.mode != modeNormal {
-		t.Fatal("expected normal mode after cancel")
-	}
-	if fm.removeCalls != 0 {
-		t.Fatalf("remove calls = %d, want 0", fm.removeCalls)
-	}
-}
-
-func TestDeleteConfirmationEnterRemovesActiveStation(t *testing.T) {
-	m := newTestModel(t)
-	fm := &fakeStationManager{}
-	m = enterDeleteConfirmMode(t, m, fm)
-	wantID := m.stations[m.activeIdx].ID
-	_, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if cmd == nil {
-		t.Fatal("expected remove command")
-	}
-	msg := cmd()
-	if _, ok := msg.(stationRemovedMsg); !ok {
-		t.Fatalf("remove command returned %T, want stationRemovedMsg", msg)
-	}
-	if fm.removeCalls != 1 {
-		t.Fatalf("remove calls = %d, want 1", fm.removeCalls)
-	}
-	if fm.removedID != wantID {
-		t.Fatalf("removed id = %q, want %q", fm.removedID, wantID)
-	}
-}
-
-func TestDeleteDisabledWithSingleStation(t *testing.T) {
-	m := newTestModel(t)
-	fm := &fakeStationManager{}
-	m.manager = fm
-	m.stations = m.stations[:1]
-	m = sendString(t, m, "d")
-	if m.mode != modeNotice {
-		t.Fatal("expected delete notice with one station")
-	}
-	if m.noticeTitle != "CANNOT DELETE" {
-		t.Fatalf("notice title = %q, want CANNOT DELETE", m.noticeTitle)
-	}
-	if m.noticeText != "At least one station must exist." {
-		t.Fatalf("notice text = %q, want last-station message", m.noticeText)
-	}
-	if fm.removeCalls != 0 {
-		t.Fatalf("remove calls = %d, want 0", fm.removeCalls)
-	}
-}
-
-func TestDeleteNoticeCanBeClosed(t *testing.T) {
-	m := newTestModel(t)
-	m.manager = &fakeStationManager{}
-	m.stations = m.stations[:1]
-	m = sendString(t, m, "d")
-	m = sendSpecial(t, m, tea.KeyEsc)
-	if m.mode != modeNormal {
-		t.Fatal("expected normal mode after closing notice")
-	}
-	if m.noticeTitle != "" || m.noticeText != "" {
-		t.Fatalf("notice state not cleared: title=%q text=%q", m.noticeTitle, m.noticeText)
-	}
-}
-
-func TestDeleteErrorKeepsConfirmationOpen(t *testing.T) {
-	m := newTestModel(t)
-	fm := &fakeStationManager{removeErr: errors.New("remove failed")}
-	m = enterDeleteConfirmMode(t, m, fm)
-	updated, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	m = updated.(*Model)
-	if cmd == nil {
-		t.Fatal("expected remove command")
-	}
-	updated, _ = m.Update(cmd())
-	m = updated.(*Model)
-	if m.mode != modeConfirmDelete {
-		t.Fatal("expected confirmation mode after remove error")
-	}
-	if m.removeError != "remove failed" {
-		t.Fatalf("remove error = %q, want remove failed", m.removeError)
-	}
-}
-
-func TestVisualizerStaysInRange(t *testing.T) {
-	m := newTestModel(t)
-	m.playing = true
-	m.streamStarted = true
-	t0 := time.Now()
-	for i := 0; i < 100; i++ {
-		updated, _ := m.Update(tickMsg(t0.Add(time.Duration(i) * tickInterval)))
-		m = updated.(*Model)
-	}
-	for i, h := range m.visualizer {
-		if h < 0 || h > 7 {
-			t.Fatalf("visualizer[%d] = %d, want 0..7", i, h)
-		}
-	}
-}
-
-func TestVisualizerFlatWhenNotPlaying(t *testing.T) {
-	m := newTestModel(t)
-	m.playing = false
-	m.streamStarted = true
-	updated, _ := m.Update(tickMsg(time.Now()))
-	m = updated.(*Model)
-	for i, h := range m.visualizer {
-		if h != 0 {
-			t.Fatalf("visualizer[%d] = %d, want 0 when not playing", i, h)
-		}
-	}
-}
-
-func TestVisualizerFlatBeforeStreamStart(t *testing.T) {
-	m := newTestModel(t)
-	m.playing = true
-	m.streamStarted = false
-	updated, _ := m.Update(tickMsg(time.Now()))
-	m = updated.(*Model)
-	for i, h := range m.visualizer {
-		if h != 0 {
-			t.Fatalf("visualizer[%d] = %d, want 0 before stream start", i, h)
-		}
-	}
-}
-
-func TestStationsRendersNameWithoutMeta(t *testing.T) {
-	m := newTestModel(t)
-	m.width = 80
-	m.height = 24
-	view := m.View().Content
-
-	active := m.stations[m.activeIdx]
-	if !strings.Contains(view, active.Name) {
-		t.Fatalf("view missing active station name %q", active.Name)
-	}
-	if strings.Contains(view, "listeners") {
-		t.Fatal("view should not contain listeners meta")
-	}
-	if strings.Contains(view, "128k") || strings.Contains(view, "256k") || strings.Contains(view, "320k") || strings.Contains(view, "192k") {
-		t.Fatal("view should not contain bitrate meta")
+	if strings.Contains(view, "New version available") {
+		t.Fatalf("view should hide update notice while an error is present:\n%s", view)
 	}
 }

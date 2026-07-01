@@ -52,7 +52,10 @@ go build -o lofi ./cmd/lofi
 ## Usage
 
 ```bash
-lofi
+lofi             # start the player
+lofi version     # print installed version
+lofi --version   # print installed version
+lofi update      # update a GitHub Releases binary install
 ```
 
 On first run, four default stations are written to `~/.lofi/stations.json`. You can add or remove stations from inside the app.

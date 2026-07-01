@@ -100,6 +100,8 @@ func (m *Model) renderBackground() string {
 	errLine := ""
 	if m.lastError != "" {
 		errLine = styleError.Render("! " + m.lastError)
+	} else if m.updateInfo != "" {
+		errLine = styleUpdateNotice.Render("* " + m.updateInfo)
 	}
 
 	var progressRow, loadingRow string
