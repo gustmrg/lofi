@@ -2,6 +2,7 @@ package ui
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -166,6 +167,50 @@ func TestPlayerEventsUpdateConnectionHealth(t *testing.T) {
 	}
 	if m.lastError != "stream ended" {
 		t.Fatalf("lastError = %q, want stream ended", m.lastError)
+	}
+}
+
+func TestFriendlyProviderErrorMessages(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"network", provider.WrapError(provider.ErrNetwork, errors.New("dns failed")), "Connection failed while opening the stream"},
+		{"decode", provider.WrapError(provider.ErrDecode, errors.New("bad output")), "Could not decode the stream"},
+		{"timeout", provider.WrapError(provider.ErrTimeout, errors.New("deadline")), "Timed out connecting to the stream"},
+		{"unknown", errors.New("raw error"), "raw error"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := providerErrorMessage(tt.err); got != tt.want {
+				t.Fatalf("providerErrorMessage() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestFriendlyPlayerErrorMessages(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"audio", player.WrapError(player.ErrAudioOutput, errors.New("ao failed")), "Audio output unavailable; check PulseAudio/WSLg"},
+		{"network", player.WrapError(player.ErrNetwork, errors.New("net failed")), "Connection failed while playing the stream"},
+		{"decode", player.WrapError(player.ErrDecode, errors.New("decode failed")), "Could not decode the stream"},
+		{"timeout", player.WrapError(player.ErrTimeout, errors.New("deadline")), "Timed out connecting to the stream"},
+		{"ipc", player.WrapError(player.ErrIPC, errors.New("closed")), "Audio player connection closed"},
+		{"unknown", errors.New("raw error"), "raw error"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := playerErrorMessage(tt.err); got != tt.want {
+				t.Fatalf("playerErrorMessage() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

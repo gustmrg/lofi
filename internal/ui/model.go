@@ -320,11 +320,8 @@ func (m *Model) applyPlayerEvent(event player.Event) {
 		m.streamStarted = false
 		m.health = healthDisconnected
 		m.healthSince = time.Now()
-		if event.Detail != "" {
-			m.lastError = event.Detail
-		}
-		if event.Err != nil {
-			m.lastError = event.Err.Error()
+		if msg := playerEventMessage(event); msg != "" {
+			m.lastError = msg
 		}
 	}
 }
@@ -397,7 +394,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.health = healthDisconnected
 		m.healthSince = time.Now()
-		m.lastError = msg.err.Error()
+		m.lastError = providerErrorMessage(msg.err)
 		return m, nil
 
 	case playerStartedMsg:
@@ -411,7 +408,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.health = healthDisconnected
 			m.healthSince = time.Now()
-			m.lastError = msg.err.Error()
+			m.lastError = playerErrorMessage(msg.err)
 			m.playing = false
 		}
 		return m, nil
@@ -436,7 +433,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case addErrorMsg:
 		m.adding = false
-		m.addError = msg.err.Error()
+		m.addError = providerErrorMessage(msg.err)
 		return m, nil
 
 	case stationRemovedMsg:
@@ -657,4 +654,57 @@ func clampInt(v, lo, hi int) int {
 		return hi
 	}
 	return v
+}
+
+func providerErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	switch provider.Category(err) {
+	case provider.ErrNetwork:
+		return "Connection failed while opening the stream"
+	case provider.ErrDecode:
+		return "Could not decode the stream"
+	case provider.ErrTimeout:
+		return "Timed out connecting to the stream"
+	default:
+		return err.Error()
+	}
+}
+
+func playerErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	if msg := playerCategoryMessage(player.Category(err)); msg != "" {
+		return msg
+	}
+	return err.Error()
+}
+
+func playerEventMessage(event player.Event) string {
+	if msg := playerCategoryMessage(event.Category); msg != "" {
+		return msg
+	}
+	if event.Err != nil {
+		return event.Err.Error()
+	}
+	return event.Detail
+}
+
+func playerCategoryMessage(category player.ErrorCategory) string {
+	switch category {
+	case player.ErrAudioOutput:
+		return "Audio output unavailable; check PulseAudio/WSLg"
+	case player.ErrNetwork:
+		return "Connection failed while playing the stream"
+	case player.ErrDecode:
+		return "Could not decode the stream"
+	case player.ErrTimeout:
+		return "Timed out connecting to the stream"
+	case player.ErrIPC:
+		return "Audio player connection closed"
+	default:
+		return ""
+	}
 }
