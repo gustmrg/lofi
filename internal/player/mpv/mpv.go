@@ -2,6 +2,7 @@ package mpv
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -274,7 +275,7 @@ func (p *Player) captureStderr(r io.Reader) {
 	go func() {
 		defer close(done)
 		for line := range lines {
-			p.logger.Warn("mpv stderr", "op", "stderr", "line", line)
+			p.logger.Log(context.Background(), stderrLogLevel(line), "mpv stderr", "op", "stderr", "line", line)
 		}
 	}()
 
@@ -335,6 +336,22 @@ func classifyEndFile(reason, stderrTail string) player.ErrorCategory {
 		return player.ErrDecode
 	default:
 		return player.ErrUnknown
+	}
+}
+
+func stderrLogLevel(line string) slog.Level {
+	lower := strings.ToLower(line)
+	switch {
+	case strings.Contains(lower, "error"),
+		strings.Contains(lower, "failed"),
+		strings.Contains(lower, "could not"),
+		strings.Contains(lower, "no route to host"),
+		strings.Contains(lower, "connection refused"),
+		strings.Contains(lower, "connection reset"),
+		strings.Contains(lower, "timed out"):
+		return slog.LevelWarn
+	default:
+		return slog.LevelDebug
 	}
 }
 

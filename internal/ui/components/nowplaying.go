@@ -7,7 +7,6 @@ type NowPlayingArgs struct {
 	Label      string
 	Title      string
 	Artist     string
-	Error      string
 	Visualizer string
 	Progress   string
 	Loading    string
@@ -19,9 +18,6 @@ func NowPlaying(a NowPlayingArgs) string {
 		a.Label,
 		a.Title,
 		a.Artist,
-	}
-	if a.Error != "" {
-		rows = append(rows, a.Error)
 	}
 	rows = append(rows, "")
 

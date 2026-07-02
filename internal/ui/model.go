@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	version "github.com/gustmrg/lofi"
+	appLog "github.com/gustmrg/lofi/internal/log"
 	"github.com/gustmrg/lofi/internal/player"
 	"github.com/gustmrg/lofi/internal/provider"
 	"github.com/gustmrg/lofi/internal/store"
@@ -41,12 +42,25 @@ const (
 
 type connectionHealth int
 
+type uiMessageKind int
+
 const (
 	healthHealthy connectionHealth = iota
 	healthUnstable
 	healthReconnecting
 	healthDisconnected
 )
+
+const (
+	messageNone uiMessageKind = iota
+	messageError
+	messageNotice
+)
+
+type uiMessage struct {
+	kind uiMessageKind
+	text string
+}
 
 type tickMsg time.Time
 
@@ -98,7 +112,6 @@ type Model struct {
 	activeIdx     int
 	track         provider.Track
 	loading       bool
-	lastError     string
 	elapsed       time.Duration
 	playing       bool
 	volume        int
@@ -109,7 +122,7 @@ type Model struct {
 	keys          keyMap
 	rng           *rand.Rand
 	lastTick      time.Time
-	updateInfo    string
+	message       uiMessage
 	checkUpdate   func(context.Context) (string, error)
 	streamStarted bool
 	health        connectionHealth
@@ -118,13 +131,11 @@ type Model struct {
 	visCurr       [visualizerMaxBars]float64
 	visTarget     [visualizerMaxBars]float64
 
-	mode     uiMode
-	input    textinput.Model
-	adding   bool
-	addError string
+	mode   uiMode
+	input  textinput.Model
+	adding bool
 
 	removing    bool
-	removeError string
 	noticeTitle string
 	noticeText  string
 }
@@ -189,7 +200,7 @@ func (m *Model) loadTrack(idx int) tea.Cmd {
 	m.streamStarted = false
 	m.health = healthReconnecting
 	m.healthSince = time.Now()
-	m.lastError = ""
+	m.clearError()
 	m.elapsed = 0
 	m.track = provider.Track{Title: m.stations[idx].Name, Artist: "loading…"}
 	return tea.Batch(
@@ -289,7 +300,55 @@ func playerEventCmd(pl player.Player) tea.Cmd {
 
 func (m *Model) persistVolume() {
 	if err := store.SaveConfig(store.Config{Volume: m.volume}); err != nil {
-		m.lastError = fmt.Sprintf("save config: %v", err)
+		m.setError("save_config", err, fmt.Sprintf("save config: %v", err))
+	}
+}
+
+func (m *Model) setError(op string, err error, text string, attrs ...any) {
+	if text == "" && err != nil {
+		text = err.Error()
+	}
+	if text == "" {
+		return
+	}
+	m.message = uiMessage{kind: messageError, text: text}
+
+	logAttrs := []any{"op", op, "mode", m.mode.String(), "user_message", text}
+	if m.activeIdx >= 0 && m.activeIdx < len(m.stations) {
+		logAttrs = append(logAttrs, "station_id", m.stations[m.activeIdx].ID)
+	}
+	if err != nil {
+		logAttrs = append(logAttrs, "err", err, "err_type", fmt.Sprintf("%T", err))
+	}
+	logAttrs = append(logAttrs, attrs...)
+	appLog.For("ui").Warn("user-visible error", logAttrs...)
+}
+
+func (m *Model) clearError() {
+	if m.message.kind == messageError {
+		m.message = uiMessage{}
+	}
+}
+
+func (m *Model) setNotice(text string) {
+	if text == "" || m.message.kind == messageError {
+		return
+	}
+	m.message = uiMessage{kind: messageNotice, text: text}
+}
+
+func (mode uiMode) String() string {
+	switch mode {
+	case modeNormal:
+		return "normal"
+	case modeAddStation:
+		return "add_station"
+	case modeConfirmDelete:
+		return "confirm_delete"
+	case modeNotice:
+		return "notice"
+	default:
+		return "unknown"
 	}
 }
 
@@ -321,7 +380,7 @@ func (m *Model) applyPlayerEvent(event player.Event) {
 		m.health = healthDisconnected
 		m.healthSince = time.Now()
 		if msg := playerEventMessage(event); msg != "" {
-			m.lastError = msg
+			m.setError("player_event", event.Err, msg, "category", event.Category.String(), "detail", event.Detail)
 		}
 	}
 }
@@ -368,7 +427,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.playing && !m.loading && m.health == healthReconnecting && !m.healthSince.IsZero() && now.Sub(m.healthSince) > streamStartTimeout {
 			m.health = healthDisconnected
 			m.healthSince = now
-			m.lastError = "stream did not start; mpv never reported playback"
+			m.setError("stream_start_timeout", nil, "stream did not start; mpv never reported playback")
 		}
 		m.lastTick = now
 		m.stepVisualizer(now)
@@ -394,7 +453,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.loading = false
 		m.health = healthDisconnected
 		m.healthSince = time.Now()
-		m.lastError = providerErrorMessage(msg.err)
+		m.setError("resolve_track", msg.err, providerErrorMessage(msg.err), "category", provider.Category(msg.err).String())
 		return m, nil
 
 	case playerStartedMsg:
@@ -408,18 +467,17 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			m.health = healthDisconnected
 			m.healthSince = time.Now()
-			m.lastError = playerErrorMessage(msg.err)
+			m.setError("player_command", msg.err, playerErrorMessage(msg.err), "category", player.Category(msg.err).String())
 			m.playing = false
 		}
 		return m, nil
 
 	case updateNoticeMsg:
-		m.updateInfo = msg.notice
+		m.setNotice(msg.notice)
 		return m, nil
 
 	case stationAddedMsg:
 		m.adding = false
-		m.addError = ""
 		m.mode = modeNormal
 		m.input.Reset()
 		m.input.Blur()
@@ -433,12 +491,11 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case addErrorMsg:
 		m.adding = false
-		m.addError = providerErrorMessage(msg.err)
+		m.setError("add_station", msg.err, providerErrorMessage(msg.err), "category", provider.Category(msg.err).String())
 		return m, nil
 
 	case stationRemovedMsg:
 		m.removing = false
-		m.removeError = ""
 		m.mode = modeNormal
 		stations, err := m.prov.Stations(context.Background())
 		if err == nil {
@@ -455,7 +512,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case removeErrorMsg:
 		m.removing = false
-		m.removeError = msg.err.Error()
+		m.setError("remove_station", msg.err, msg.err.Error())
 		return m, nil
 
 	case tea.KeyPressMsg:
@@ -486,7 +543,7 @@ func (m *Model) updateAddInput(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	if m.input.Err != nil {
-		m.addError = m.input.Err.Error()
+		m.setError("add_station_input", m.input.Err, m.input.Err.Error())
 	}
 	return m, cmd
 }
@@ -496,7 +553,7 @@ func (m *Model) handleAddKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case key.Matches(msg, m.keys.Cancel):
 		m.mode = modeNormal
 		m.adding = false
-		m.addError = ""
+		m.clearError()
 		m.input.Reset()
 		m.input.Blur()
 		return m, nil
@@ -506,11 +563,10 @@ func (m *Model) handleAddKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		url := m.input.Value()
 		if url == "" {
-			m.addError = "url is empty"
+			m.setError("add_station_input", nil, "url is empty")
 			return m, nil
 		}
 		m.adding = true
-		m.addError = ""
 		return m, addStationCmd(m.manager, url)
 	}
 	return m.updateAddInput(msg)
@@ -521,14 +577,13 @@ func (m *Model) handleDeleteConfirmKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd)
 	case key.Matches(msg, m.keys.Cancel):
 		m.mode = modeNormal
 		m.removing = false
-		m.removeError = ""
+		m.clearError()
 		return m, nil
 	case key.Matches(msg, m.keys.Confirm):
 		if m.removing || m.manager == nil || len(m.stations) <= 1 {
 			return m, nil
 		}
 		m.removing = true
-		m.removeError = ""
 		return m, removeStationCmd(m.manager, m.stations[m.activeIdx].ID, m.activeIdx)
 	}
 	return m, nil
@@ -584,7 +639,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.mode = modeAddStation
-		m.addError = ""
+		m.clearError()
 		m.input.Reset()
 		return m, m.input.Focus()
 	case key.Matches(msg, m.keys.Delete):
@@ -598,7 +653,7 @@ func (m *Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.mode = modeConfirmDelete
-		m.removeError = ""
+		m.clearError()
 		return m, nil
 	default:
 		for i, b := range m.keys.Stations {

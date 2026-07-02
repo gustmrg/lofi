@@ -60,6 +60,8 @@ lofi update      # update a GitHub Releases binary install
 
 On first run, four default stations are written to `~/.lofi/stations.json`. You can add or remove stations from inside the app.
 
+Diagnostic logs are written per run to `~/.lofi/logs/lofi-YYYYMMDD-HHMMSS-pid.log`. `~/.lofi/logs/latest.log` points to the most recent run when symlinks are supported; otherwise `latest.txt` contains the latest filename. Use `--log-file=<path>` to write to a specific file.
+
 ## Keybindings
 
 | Key | Action |

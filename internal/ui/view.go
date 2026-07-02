@@ -27,12 +27,10 @@ func (m *Model) View() tea.View {
 				Title:       "ADD STATION",
 				Input:       m.input.View(),
 				Loading:     m.adding,
-				Error:       m.addError,
 				BoxStyle:    styleModalBox,
 				TitleStyle:  styleModalTitle,
 				HintStyle:   styleModalHint,
 				StatusStyle: styleModalStatus,
-				ErrorStyle:  styleError,
 			})
 		} else if m.mode == modeConfirmDelete {
 			name := ""
@@ -44,13 +42,11 @@ func (m *Model) View() tea.View {
 				Message:      "Delete " + name + "?",
 				Hint:         "enter to delete  ·  esc to cancel",
 				Loading:      m.removing,
-				Error:        m.removeError,
 				BoxStyle:     styleModalBox,
 				TitleStyle:   styleModalTitle,
 				MessageStyle: styleStationActive,
 				HintStyle:    styleModalHint,
 				StatusStyle:  styleModalStatus,
-				ErrorStyle:   styleError,
 			})
 		} else {
 			modal = components.ConfirmModal(components.ConfirmModalArgs{
@@ -62,7 +58,6 @@ func (m *Model) View() tea.View {
 				MessageStyle: styleStationActive,
 				HintStyle:    styleModalHint,
 				StatusStyle:  styleModalStatus,
-				ErrorStyle:   styleError,
 			})
 		}
 		modalW := lipgloss.Width(modal)
@@ -97,13 +92,6 @@ func (m *Model) renderBackground() string {
 		statusBadge(m.playing, m.health, m.lastTick),
 	)
 
-	errLine := ""
-	if m.lastError != "" {
-		errLine = styleError.Render("! " + m.lastError)
-	} else if m.updateInfo != "" {
-		errLine = styleUpdateNotice.Render("* " + m.updateInfo)
-	}
-
 	var progressRow, loadingRow string
 	switch {
 	case m.loading:
@@ -119,7 +107,6 @@ func (m *Model) renderBackground() string {
 		Label:      styleNPLabel.Render("NOW PLAYING"),
 		Title:      styleNPTitle.Render(m.track.Title),
 		Artist:     styleNPArtist.Render("by " + m.track.Artist),
-		Error:      errLine,
 		Visualizer: components.Visualizer(m.visualizer[:], contentWidth-4, pal.TextFaint, pal.Accent),
 		Progress:   progressRow,
 		Loading:    loadingRow,
@@ -139,7 +126,7 @@ func (m *Model) renderBackground() string {
 
 	footer := components.Footer(contentWidth, styleFooterKey, styleFooterLabel)
 
-	body := strings.Join([]string{
+	rows := []string{
 		header,
 		"",
 		np,
@@ -149,11 +136,29 @@ func (m *Model) renderBackground() string {
 		stationList,
 		"",
 		vol,
+	}
+	if msg := m.renderMessage(); msg != "" {
+		rows = append(rows, "", msg)
+	}
+	rows = append(rows,
 		"",
 		footer,
-	}, "\n")
+	)
+
+	body := strings.Join(rows, "\n")
 
 	return lipgloss.NewStyle().Padding(1, hPad).Render(body)
+}
+
+func (m *Model) renderMessage() string {
+	switch m.message.kind {
+	case messageError:
+		return styleError.Render("! " + m.message.text)
+	case messageNotice:
+		return styleUpdateNotice.Render("* " + m.message.text)
+	default:
+		return ""
+	}
 }
 
 func statusBadge(playing bool, health connectionHealth, t time.Time) string {

@@ -8,6 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -30,6 +32,10 @@ func main() {
 type buildFunc func(string) (provider.Provider, player.Player, error)
 type updateFunc func(context.Context, io.Writer) error
 
+const managedLogRetention = 14 * 24 * time.Hour
+
+var nowFunc = time.Now
+
 func run(args []string, stdout, stderr io.Writer, build buildFunc, update updateFunc) int {
 	fs := flag.NewFlagSet("lofi", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -46,19 +52,6 @@ func run(args []string, stdout, stderr io.Writer, build buildFunc, update update
 		fmt.Fprintf(stderr, "lofi: %v\n", err)
 		return 2
 	}
-	var logFile *os.File
-	if *logFileFlag != "" {
-		f, err := os.OpenFile(*logFileFlag, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
-		if err != nil {
-			fmt.Fprintf(stderr, "lofi: open log file %q: %v\n", *logFileFlag, err)
-		} else {
-			logFile = f
-			defer logFile.Close()
-		}
-	}
-	appLog.Init(appLog.Config{Level: level, File: logFile, Stderr: stderr})
-	logger := appLog.For("main")
-
 	if *versionFlag {
 		fmt.Fprintln(stdout, version.Display(version.Current()))
 		return 0
@@ -75,23 +68,27 @@ func run(args []string, stdout, stderr io.Writer, build buildFunc, update update
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 			defer cancel()
 			if err := update(ctx, stdout); err != nil {
-				logger.Error("command failed", "op", "update", "err", err, "err_type", fmt.Sprintf("%T", err))
 				fmt.Fprintf(stderr, "lofi: update: %v\n", err)
 				return 1
 			}
 			return 0
 		default:
-			logger.Error("unknown command", "op", "parse_args", "command", fs.Arg(0))
 			fmt.Fprintf(stderr, "lofi: unknown command %q\n", fs.Arg(0))
 			return 2
 		}
 	default:
-		logger.Error("too many arguments", "op", "parse_args", "count", fs.NArg())
 		fmt.Fprintf(stderr, "lofi: too many arguments\n")
 		return 2
 	}
 
-	logger.Info("starting", "version", version.Display(version.Current()), "provider", *providerFlag, "log_level", *logLevelFlag, "log_file", *logFileFlag != "")
+	logFile, logPath := openDiagnosticLog(*logFileFlag, stderr)
+	if logFile != nil {
+		defer logFile.Close()
+	}
+	appLog.Init(appLog.Config{Level: level, File: logFile})
+	logger := appLog.For("main")
+
+	logger.Info("starting", "version", version.Display(version.Current()), "provider", *providerFlag, "log_level", *logLevelFlag, "log_file", logPath)
 	prov, pl, err := build(*providerFlag)
 	if err != nil {
 		logger.Error("build failed", "op", "build", "provider", *providerFlag, "err", err, "err_type", fmt.Sprintf("%T", err))
@@ -114,6 +111,80 @@ func run(args []string, stdout, stderr io.Writer, build buildFunc, update update
 		return 1
 	}
 	return 0
+}
+
+func openDiagnosticLog(flagPath string, stderr io.Writer) (*os.File, string) {
+	path := flagPath
+	managed := false
+	if path == "" {
+		var err error
+		path, err = managedLogPath(nowFunc())
+		if err != nil {
+			fmt.Fprintf(stderr, "lofi: prepare log file: %v\n", err)
+			return nil, ""
+		}
+		managed = true
+	}
+
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		fmt.Fprintf(stderr, "lofi: create log directory %q: %v\n", dir, err)
+		return nil, ""
+	}
+	if managed {
+		pruneManagedLogs(dir, nowFunc(), managedLogRetention)
+	}
+
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		fmt.Fprintf(stderr, "lofi: open log file %q: %v\n", path, err)
+		return nil, ""
+	}
+	if managed {
+		updateLatestLog(dir, path)
+	}
+	return f, path
+}
+
+func managedLogPath(now time.Time) (string, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("locate home dir: %w", err)
+	}
+	name := fmt.Sprintf("lofi-%s-%d.log", now.Format("20060102-150405"), os.Getpid())
+	return filepath.Join(home, ".lofi", "logs", name), nil
+}
+
+func updateLatestLog(dir, path string) {
+	latest := filepath.Join(dir, "latest.log")
+	_ = os.Remove(latest)
+	if err := os.Symlink(filepath.Base(path), latest); err == nil {
+		_ = os.Remove(filepath.Join(dir, "latest.txt"))
+		return
+	}
+	_ = os.WriteFile(filepath.Join(dir, "latest.txt"), []byte(filepath.Base(path)+"\n"), 0o644)
+}
+
+func pruneManagedLogs(dir string, now time.Time, maxAge time.Duration) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	cutoff := now.Add(-maxAge)
+	for _, entry := range entries {
+		if entry.IsDir() || !isManagedLogName(entry.Name()) {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil || !info.ModTime().Before(cutoff) {
+			continue
+		}
+		_ = os.Remove(filepath.Join(dir, entry.Name()))
+	}
+}
+
+func isManagedLogName(name string) bool {
+	return strings.HasPrefix(name, "lofi-") && strings.HasSuffix(name, ".log")
 }
 
 func parseLogLevel(raw string) (slog.Level, error) {

@@ -23,6 +23,18 @@ func TestInit_FileGetsSelectedLevelsAndStderrGetsWarnPlus(t *testing.T) {
 	}
 }
 
+func TestInit_FileOnlyWhenStderrNil(t *testing.T) {
+	var file bytes.Buffer
+	Init(Config{Level: slog.LevelInfo, File: &file})
+
+	logger := For("test")
+	logger.Warn("warn message")
+
+	if got := file.String(); !strings.Contains(got, "warn message") {
+		t.Fatalf("file log = %q, want warn message", got)
+	}
+}
+
 func TestInit_StderrOnlyHonorsLevel(t *testing.T) {
 	var stderr bytes.Buffer
 	Init(Config{Level: slog.LevelWarn, Stderr: &stderr})

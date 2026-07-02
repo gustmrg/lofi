@@ -165,8 +165,8 @@ func TestPlayerEventsUpdateConnectionHealth(t *testing.T) {
 	if m.health != healthDisconnected {
 		t.Fatalf("disconnected event health = %v, want %v", m.health, healthDisconnected)
 	}
-	if m.lastError != "stream ended" {
-		t.Fatalf("lastError = %q, want stream ended", m.lastError)
+	if m.message.kind != messageError || m.message.text != "stream ended" {
+		t.Fatalf("message = %#v, want stream ended error", m.message)
 	}
 }
 
@@ -236,8 +236,8 @@ func TestConnectingTimesOutWhenPlaybackNeverStarts(t *testing.T) {
 	if m.health != healthDisconnected {
 		t.Fatalf("health = %v, want %v", m.health, healthDisconnected)
 	}
-	if m.lastError != "stream did not start; mpv never reported playback" {
-		t.Fatalf("lastError = %q, want stream timeout", m.lastError)
+	if m.message.kind != messageError || m.message.text != "stream did not start; mpv never reported playback" {
+		t.Fatalf("message = %#v, want stream timeout error", m.message)
 	}
 }
 
@@ -250,8 +250,8 @@ func TestDisconnectedPlayerEventDuringLoadKeepsReconnecting(t *testing.T) {
 	if m.health != healthReconnecting {
 		t.Fatalf("health = %v, want %v", m.health, healthReconnecting)
 	}
-	if m.lastError != "" {
-		t.Fatalf("lastError = %q, want empty", m.lastError)
+	if m.message.kind == messageError {
+		t.Fatalf("message = %#v, want no error", m.message)
 	}
 }
 
@@ -434,20 +434,58 @@ func TestUpdateNoticeMessage(t *testing.T) {
 	})
 	updated, _ := m.Update(cmd())
 	m = updated.(*Model)
-	if !strings.Contains(m.updateInfo, "v0.2.0") {
-		t.Fatalf("updateInfo = %q", m.updateInfo)
+	if m.message.kind != messageNotice || !strings.Contains(m.message.text, "v0.2.0") {
+		t.Fatalf("message = %#v, want update notice", m.message)
 	}
 }
 
-func TestPlaybackErrorTakesPrecedenceOverUpdateNotice(t *testing.T) {
+func TestPlaybackErrorTakesPrecedenceOverUpdateNoticeInBottomMessage(t *testing.T) {
 	m := newTestModel(t)
-	m.updateInfo = "New version available: v0.2.0 (you are using v0.1.0). Run 'lofi update' to update."
-	m.lastError = "player failed"
+	m.setNotice("New version available: v0.2.0 (you are using v0.1.0). Run 'lofi update' to update.")
+	m.setError("test", errors.New("player failed"), "player failed")
 	view := m.renderBackground()
 	if !strings.Contains(view, "player failed") {
 		t.Fatalf("view should contain playback error:\n%s", view)
 	}
 	if strings.Contains(view, "New version available") {
 		t.Fatalf("view should hide update notice while an error is present:\n%s", view)
+	}
+	if strings.Contains(view, "NOW PLAYING\n| player failed") {
+		t.Fatalf("view should not render error inside now playing:\n%s", view)
+	}
+}
+
+func TestAddErrorRendersOnlyInBottomMessage(t *testing.T) {
+	m := newTestModel(t)
+	m.width = 100
+	m.height = 40
+	m = enterAddMode(t, m)
+	m = sendSpecial(t, m, tea.KeyEnter)
+
+	view := m.View().Content
+	if !strings.Contains(view, "url is empty") {
+		t.Fatalf("view should contain add error:\n%s", view)
+	}
+	if !strings.Contains(view, "enter to confirm") {
+		t.Fatalf("modal should keep hint text instead of replacing it with error:\n%s", view)
+	}
+}
+
+func TestDeleteErrorRendersOnlyInBottomMessage(t *testing.T) {
+	m := newTestModel(t)
+	m.width = 100
+	m.height = 40
+	fm := &fakeStationManager{removeErr: errors.New("delete failed")}
+	m = enterDeleteConfirmMode(t, m, fm)
+
+	updated, _ := m.Update(removeErrorMsg{err: fm.removeErr})
+	m = updated.(*Model)
+
+	view := m.View().Content
+	if !strings.Contains(view, "delete failed") {
+		t.Fatalf("view should contain delete error:\n%s", view)
+	}
+	if !strings.Contains(view, "enter to delete") {
+		t.Fatalf("modal should keep hint text instead of replacing it with error:\n%s", view)
 	}
 }
